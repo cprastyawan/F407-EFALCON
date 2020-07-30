@@ -1,0 +1,33 @@
+else if(nextData_GNRMC == 1){
+				  int lengthBefore = strlen(GPS_String.GNRMC);
+				  int lengthAdd = strchr(GPSBuffer, '\n') - (unsigned)GPSBuffer;
+				  int lengthAfter = lengthBefore + lengthAdd;
+				  GPS_String.GNRMC = realloc(GPS_String.GNRMC, lengthAfter);
+				  strncat(GPS_String.GNRMC, GPSBuffer, lengthAdd);
+				  GPS_String.GNRMC[lengthAfter]='\0';
+				  nextData_GNRMC = 0;
+				  i = i + lengthAdd;
+				  HAL_UART_Transmit(&huart3, GPS_String.GNRMC, lengthAfter, 1000);
+
+			  } else if(nextData_GNGLL == 1){
+				  int lengthBefore = strlen(GPS_String.GNGLL);
+				  int lengthAdd = strchr(GPSBuffer, '\n') - (unsigned)GPSBuffer;
+				  int lengthAfter = lengthBefore + lengthAdd;
+				  GPS_String.GNGLL = realloc(GPS_String.GNGLL, lengthAfter);
+				  strncat(GPS_String.GNGLL, GPSBuffer, lengthAdd);
+				  GPS_String.GNGLL[lengthAfter]='\0';
+				  nextData_GNGLL = 0;
+				  i = i + lengthAdd;
+				  HAL_UART_Transmit(&huart3, GPS_String.GNGLL, lengthAfter, 1000);
+
+			  } else if(nextData_GNGGA == 1){
+				  int lengthBefore = strlen(GPS_String.GNGGA);
+				  int lengthAdd = strchr(GPSBuffer, '\n') - (unsigned)GPSBuffer;
+				  int lengthAfter = lengthBefore + lengthAdd;
+				  GPS_String.GNGGA = realloc(GPS_String.GNGGA, lengthAfter);
+				  strncat(GPS_String.GNGGA, GPSBuffer, lengthAdd);
+				  GPS_String.GNGGA[lengthAfter]='\0';
+				  nextData_GNGGA = 0;
+				  i = i + lengthAdd;
+				  HAL_UART_Transmit(&huart3, GPS_String.GNGGA, lengthAfter, 1000);
+			  }
