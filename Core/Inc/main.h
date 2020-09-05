@@ -47,27 +47,28 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-struct GPS_STRING{
+typedef struct{
 	char *GNGLL;
 	char *GNRMC;
 	char *GNGGA;
-};
+}GPS_STRING;
 
-struct IMU_DATA {
+typedef struct{
 	float YAW;
 	float PITCH;
 	float ROLL;
-};
+}IMU_DATA;
 
-struct PWM_DATA{
+typedef struct{
+	TIM_HandleTypeDef *htim;
+	uint32_t channel;
 	uint32_t RisingEdgeVal;
 	uint32_t FallingEdgeVal;
 	uint32_t DutyCycleVal;
 	uint32_t FrequencyVal;
 	bool onRisingEdge;
 	bool onFallingEdge;
-};
-
+}PWM_DATA;
 /* USER CODE END EM */
 
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);

@@ -15,6 +15,12 @@ RM := rm -rf
 -include objects.mk
 
 ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(strip $(S_DEPS)),)
+-include $(S_DEPS)
+endif
+ifneq ($(strip $(S_UPPER_DEPS)),)
+-include $(S_UPPER_DEPS)
+endif
 ifneq ($(strip $(C_DEPS)),)
 -include $(C_DEPS)
 endif
@@ -40,8 +46,8 @@ F407-EFALCON.bin \
 all: F407-EFALCON.elf secondary-outputs
 
 # Tool invocations
-F407-EFALCON.elf: $(OBJS) $(USER_OBJS) C:\Users\LENOVO\STM32CubeIDE\workspace_1.2.0\F407-EFALCON\STM32F407VGTX_FLASH.ld
-	arm-none-eabi-gcc -o "F407-EFALCON.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\LENOVO\STM32CubeIDE\workspace_1.2.0\F407-EFALCON\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="F407-EFALCON.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+F407-EFALCON.elf: $(OBJS) $(USER_OBJS) C:\Users\LENOVO\STM32CubeIDE\workspace_1.4.2\F407-EFALCON\STM32F407VGTX_FLASH.ld
+	arm-none-eabi-gcc -o "F407-EFALCON.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\LENOVO\STM32CubeIDE\workspace_1.4.2\F407-EFALCON\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="F407-EFALCON.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
