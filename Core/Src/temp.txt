@@ -31,3 +31,27 @@ else if(nextData_GNRMC == 1){
 				  i = i + lengthAdd;
 				  HAL_UART_Transmit(&huart3, GPS_String.GNGGA, lengthAfter, 1000);
 			  }
+			  
+	  uint16_t i, pos, start, length;
+	  uint16_t currCNDTR = __HAL_DMA_GET_COUNTER(huart->hdmarx);
+
+	  if(gps_uart_rx.flag && currCNDTR == GPS_BUF_SIZE){
+		  gps_uart_rx.flag = 0;
+		  return;
+	  }
+
+	  start = (gps_uart_rx.prevCNDTR < GPS_BUF_SIZE) ? (GPS_BUF_SIZE - gps_uart_rx.prevCNDTR) : 0;
+
+	  if(gps_uart_rx.flag){
+		  length = (gps_uart_rx.prevCNDTR < GPS_BUF_SIZE) ? (gps_uart_rx.prevCNDTR - currCNDTR) : (GPS_BUF_SIZE - currCNDTR);
+		  gps_uart_rx.prevCNDTR = currCNDTR;
+		  gps_uart_rx.flag = 0;
+	  }
+	  else {
+		  length = GPS_BUF_SIZE - start;
+		  gps_uart_rx.prevCNDTR = GPS_BUF_SIZE;
+	  }
+
+	  for(i=0, pos=start; i<length; ++i, ++pos){
+		  GPSBuffer[i] = gps_rx_buf[pos];
+	  }

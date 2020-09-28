@@ -1,12 +1,17 @@
-//HMC5883L I2C library for ARM STM32F103xx Microcontrollers - Main header file
-//Has bit, byte and buffer I2C R/W functions
-// 24/05/2012 by Harinadha Reddy Chintalapalli <harinath.ec@gmail.com>
+// I2Cdev library collection - HMC5883L I2C device class header file
+// Based on Honeywell HMC5883L datasheet, 10/2010 (Form #900405 Rev B)
+// 6/12/2012 by Jeff Rowberg <jeff@rowberg.net>
+// 6/6/2015 by Andrey Voloshin <voloshin@think.in.ua>
+//
 // Changelog:
-//     2012-05-24 - initial release. Thanks to Jeff Rowberg <jeff@rowberg.net> for his AVR/Arduino
-//                  based development which inspired me & taken as reference to develop this.
-/* ============================================================================================
-HMC5883L device I2C library code for ARM STM32F103xx is placed under the MIT license
-Copyright (c) 2012 Harinadha Reddy Chintalapalli
+//      2015-06-06 - ported to STM32 HAL library from Arduino code
+//     2012-06-12 - fixed swapped Y/Z axes
+//     2011-08-22 - small Doxygen comment fixes
+//     2011-07-31 - initial release
+
+/* ============================================
+I2Cdev device library code is placed under the MIT license
+Copyright (c) 2011 Jeff Rowberg
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,32 +30,26 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-================================================================================================
+===============================================
 */
 
 #ifndef _HMC5883L_H_
 #define _HMC5883L_H_
 
-#ifdef __cplusplus
- extern "C" {
-#endif
-
- /* Includes */
-#include <stm32f4xx_hal.h>
-#include <stdbool.h>
+#include "I2Cdev.h"
 
 #define HMC5883L_ADDRESS            0x1E // this device only has one address
-#define HMC5883L_DEFAULT_ADDRESS    (HMC5883L_ADDRESS<<1)
+#define HMC5883L_DEFAULT_ADDRESS    0x1E
 
 #define HMC5883L_RA_CONFIG_A        0x00
 #define HMC5883L_RA_CONFIG_B        0x01
 #define HMC5883L_RA_MODE            0x02
 #define HMC5883L_RA_DATAX_H         0x03
 #define HMC5883L_RA_DATAX_L         0x04
-#define HMC5883L_RA_DATAY_H         0x05
-#define HMC5883L_RA_DATAY_L         0x06
-#define HMC5883L_RA_DATAZ_H         0x07
-#define HMC5883L_RA_DATAZ_L         0x08
+#define HMC5883L_RA_DATAZ_H         0x05
+#define HMC5883L_RA_DATAZ_L         0x06
+#define HMC5883L_RA_DATAY_H         0x07
+#define HMC5883L_RA_DATAY_L         0x08
 #define HMC5883L_RA_STATUS          0x09
 #define HMC5883L_RA_ID_A            0x0A
 #define HMC5883L_RA_ID_B            0x0B
@@ -102,50 +101,39 @@ THE SOFTWARE.
 #define HMC5883L_STATUS_LOCK_BIT    1
 #define HMC5883L_STATUS_READY_BIT   0
 
- typedef struct {
- 	I2C_HandleTypeDef *hi2c;
- 	uint8_t address;
- 	uint8_t averaging;
- 	uint8_t rate;
- 	uint8_t bias;
- 	uint8_t gain;
- 	uint8_t mode;
- } HMC5883L_t;
-
-void HMC5883L_Initialize(HMC5883L_t *hmc5883l);
-bool HMC5883L_TestConnection(HMC5883L_t *hmc5883l);
+void HMC5883L_initialize();
+bool HMC5883L_testConnection();
 
 // CONFIG_A register
-uint8_t HMC5883L_GetSampleAveraging(HMC5883L_t *hmc5883l);
-void HMC5883L_SetSampleAveraging(HMC5883L_t *hmc5883l, uint8_t averaging);
-uint8_t HMC5883L_GetDataRate(HMC5883L_t *hmc5883l);
-void HMC5883L_SetDataRate(HMC5883L_t *hmc5883l, uint8_t rate);
-uint8_t HMC5883L_GetMeasurementBias(HMC5883L_t *hmc5883l);
-void HMC5883L_SetMeasurementBias(HMC5883L_t *hmc5883l, uint8_t bias);
+uint8_t HMC5883L_getSampleAveraging();
+void HMC5883L_setSampleAveraging(uint8_t averaging);
+uint8_t HMC5883L_getDataRate();
+void HMC5883L_setDataRate(uint8_t rate);
+uint8_t HMC5883L_getMeasurementBias();
+void HMC5883L_setMeasurementBias(uint8_t bias);
 
 // CONFIG_B register
-uint8_t HMC5883L_GetGain(HMC5883L_t *hmc5883l);
-void HMC5883L_SetGain(HMC5883L_t *hmc5883l, uint8_t gain);
+uint8_t HMC5883L_getGain();
+void HMC5883L_setGain(uint8_t gain);
 
 // MODE register
-uint8_t HMC5883L_GetMode(HMC5883L_t *hmc5883l);
-void HMC5883L_SetMode(HMC5883L_t *hmc5883l, uint8_t mode);
+uint8_t HMC5883L_getMode();
+void HMC5883L_setMode(uint8_t mode);
 
 // DATA* registers
-void HMC5883L_GetHeading(HMC5883L_t *hmc5883l, int *x_heading, int *y_heading, int *z_heading);
+void HMC5883L_getHeading(int16_t *x, int16_t *y, int16_t *z);
+int16_t HMC5883L_getHeadingX();
+int16_t HMC5883L_getHeadingY();
+int16_t HMC5883L_getHeadingZ();
+
 // STATUS register
-bool HMC5883L_GetLockStatus(HMC5883L_t *hmc5883l);
-bool HMC5883L_GetReadyStatus(HMC5883L_t *hmc5883l);
+bool HMC5883L_getLockStatus();
+bool HMC5883L_getReadyStatus();
 
-void HMC5883L_WriteBits(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t data);
-void HMC5883L_WriteBit(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitNum, uint8_t data);
-void HMC5883L_ReadBits(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t *data);
-void HMC5883L_ReadBit(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitNum, uint8_t *data);
-
-void HMC5883L_I2C_ByteWrite(HMC5883L_t *hmc5883l, uint8_t* pBuffer, uint8_t WriteAddr);
-void HMC5883L_I2C_BufferRead(HMC5883L_t *hmc5883l, uint8_t* pBuffer, uint8_t ReadAddr, uint16_t NumByteToRead);
+// ID_* registers
+uint8_t HMC5883L_getIDA();
+uint8_t HMC5883L_getIDB();
+uint8_t HMC5883L_getIDC();
 
 
 #endif /* _HMC5883L_H_ */
-
-/******************* (C) COPYRIGHT 2012 Harinadha Reddy Chintalapalli *****END OF FILE****/

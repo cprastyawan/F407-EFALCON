@@ -30,8 +30,8 @@
 #include "bmp280.h"
 #include "Kalman.h"
 #include "HMC5883L.h"
-#include "GlobalVariables.h"
 #include "pid.h"
+#include "I2Cdev.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,50 +59,49 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
-TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim9;
 
-UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
-DMA_HandleTypeDef hdma_uart4_rx;
 DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
 BMP280_HandleTypedef bmp280;
 uint8_t buffer[200];
 uint16_t strSize;
 uint8_t IMUBuffer[16];
-uint8_t GPSBuffer[800];
-int GPSBufferLength;
-static char GPSDataStatus = 0;
-static char IMUDataStatus = 0;
-HAL_StatusTypeDef huart2Status;
-HAL_StatusTypeDef huart3Status;
-HAL_StatusTypeDef huart4Status;
+
+bool GPSDataStatus;
+bool IMUDataStatus;
 int dutyCycle = ESC_PWM_MIN;
 float pressureRef = 0;
 bool bme280p;
 bool RisingEdge = 1, FallingEdge = 0;
-float pressure, temperature, humidity;
-int x_heading, y_heading, z_heading;
-const UART_HandleTypeDef *UART_Telemetry = &huart1;
-const UART_HandleTypeDef *UART_IMU = &huart2;
-const UART_HandleTypeDef *UART_GPS = &huart4;
-uint32_t w_output[4];
+int16_t x_heading, y_heading, z_heading;
+float altitude;
+char latitude[20];
+char longitude[20];
 
-HMC5883L_t hmc5883l;
+uint8_t gps_rx_buf[GPS_BUF_SIZE];
+uint8_t GPSBuffer[GPS_BUF_SIZE];
+
+uint32_t w_output[4];
 
 Kalman_t kalman_altitude;
 
-PIDType_t PIDYaw, PIDRoll, PIDPitch;
-
-double inputYAW, inputPITCH, inputROLL;
+char lat[20];
+char lat_a;
+char lon[20];
+char lon_a;
 
 PWM_DATA RC_CH1, RC_CH2, RC_CH3, RC_CH4, RC_CH5, RC_CH6;
-GPS_STRING GPS_String;
+
 IMU_DATA IMU_Data;
+float pitchRef = 0, yawRef = 0, rollRef = 0;
+FLY_MODE fly_mode;
 
 /* USER CODE END PV */
 
@@ -111,7 +110,6 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_UART4_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USART2_UART_Init(void);
@@ -122,17 +120,22 @@ static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM9_Init(void);
-static void MX_TIM6_Init(void);
+static void MX_TIM7_Init(void);
 /* USER CODE BEGIN PFP */
-void getIMUData(struct IMU_DATA *IMU_Data);
-void CalibrateESC();
+
+void ESCInit();
 void setPWM(TIM_HandleTypeDef htim, uint32_t channel, uint32_t dutyCycle);
 void BMPInit();
 void IMUInit();
-void HMC5883LInit();
-void setPWM_DATA(struct PWM_DATA* pwm_data);
-void initPWM_DATA(struct PWM_DATA* pwm_data, TIM_HandleTypeDef *htim, uint32_t channel);
-void kinematic(uint32_t *output, uint32_t input1, uint32_t input2, uint32_t input3, uint32_t input4);
+void GPSInit();
+void RemoteInit();
+void CompassInit();
+void setPWM_DATA(PWM_DATA* pwm_data);
+void initPWM_DATA(PWM_DATA* pwm_data, TIM_HandleTypeDef *htim, uint32_t channel);
+void getIMUData(IMU_DATA *IMU_Data);
+void getGPSLatLon();
+void getCompass();
+void getBMPAltitude();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -170,7 +173,6 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_I2C1_Init();
-  MX_UART4_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   MX_USART2_UART_Init();
@@ -181,15 +183,9 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM5_Init();
   MX_TIM9_Init();
-  MX_TIM6_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
-  //Kalibrasi Tilt
-
-  initPWM_DATA(&RC_CH1, &htim3, TIM_CHANNEL_2);
-  initPWM_DATA(&RC_CH2, &htim9, TIM_CHANNEL_2);
-  initPWM_DATA(&RC_CH3, &htim5, TIM_CHANNEL_1);
-  initPWM_DATA(&RC_CH4, &htim3, TIM_CHANNEL_1);
-  initPWM_DATA(&RC_CH5, &htim4, TIM_CHANNEL_1);
+  //ESCInit();
 
   //Inisialisasi PID
   //ROLL
@@ -199,135 +195,45 @@ int main(void)
   PIDInit(&PIDPitch, 1, 1, 1, 1); //kp = 1, kd = 1, ki = 1, timesampling = 1
 
   //YAW
-  PIDInit(&PIDYaw,1,1,1,1); //kp = 1, kd = 1, ki = 1, timesampling =1
+  PIDInit(&PIDYaw,1,1,1,1); //kp = 1, kd = 1, ki = 1, timesampling = 1
 
-  PIDControl(&PIDRoll, (float)IMU_Data->ROLL, RC_CH2.DutyCycleVal);
+  /*PIDControl(&PIDRoll, (float)IMU_Data->ROLL, RC_CH2.DutyCycleVal);
   PIDControl(&PIDPitch, (float)IMU_Data->PITCH, RC_CH1.DutyCycleVal);
-  PIDControl(&PIDYaw, (float)IMU_Data->YAW, RC_CH4.DutyCycleVal);
+  PIDControl(&PIDYaw, (float)IMU_Data->YAW, RC_CH4.DutyCycleVal);*/
 
+  //init sensor
   IMUInit();
-  __HAL_UART_ENABLE_IT(&huart4, UART_IT_IDLE);
-  huart4Status = HAL_UART_Receive_DMA(&huart4, GPSBuffer, 800);
-
-  kalman_init(&kalman_altitude, 0.1, 0.1, 0.03);
+  CompassInit();
   BMPInit();
-  //HMC5883LInit();
-  //HAL_UART_Receive_IT(&huart4, GPSBuffer, 10);
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
-  CalibrateESC();
-  //HAL_TIM_Base_Start_IT(&htim6);
-  HAL_TIM_IC_Start_IT(RC_CH1.htim, RC_CH1.channel);
-  HAL_TIM_IC_Start_IT(RC_CH2.htim, RC_CH2.channel);
-  HAL_TIM_IC_Start_IT(RC_CH3.htim, RC_CH3.channel);
-  HAL_TIM_IC_Start_IT(RC_CH4.htim, RC_CH4.channel);
-  HAL_TIM_IC_Start_IT(RC_CH5.htim, RC_CH5.channel);
+  GPSInit();
 
-  float altitude;
+  //Remote init
+  RemoteInit();
 
+  strSize = sprintf((char*)buffer, "Mulai\r\n");
+  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-	  kinematic(w_output, RC_CH1.DutyCycleVal, RC_CH2.DutyCycleVal, RC_CH3.DutyCycleVal, RC_CH4.DutyCycleVal);
-
-	  strSize = sprintf((char*)buffer, "ESC1: %lu\r\n", w_output[0]);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-
-	  strSize = sprintf((char*)buffer, "ESC2: %lu\r\n", w_output[1]);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-
-	  strSize = sprintf((char*)buffer, "ESC3: %lu\r\n", w_output[2]);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-
-	  strSize = sprintf((char*)buffer, "ESC4: %lu\r\n", w_output[3]);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-
-	  HAL_UART_Transmit(&huart1, "\r\n", 2, 5);
-
-	  HAL_Delay(200);
-
-	  if(!bmp280_is_measuring(&bmp280)){
-		  bmp280_read_float(&bmp280, &temperature, &pressure, &humidity);
-		  altitude = bmp280_read_altitude(pressure/100, pressureRef/100);
-		  float estimated_altitude = kalman_updateEstimate(&kalman_altitude, altitude);
-		  strSize = sprintf((char*)buffer, "%f\r\n", estimated_altitude);
-		  //HAL_UART_Transmit(&huart1, buffer, strSize, 1);
+	  if(inputFlyMode >= 900 && inputFlyMode <= 1100 && fly_mode != FLY_MODE_OFF){
+		  HAL_TIM_Base_Stop_IT(&htim7);
+		  fly_mode = FLY_MODE_OFF;
+		  strSize = sprintf((char*)buffer, "Wahana Mode Off");
+		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+	  } else if(inputFlyMode >= 1400 && inputFlyMode <= 1600 && fly_mode != FLY_MODE_ON){
+		  fly_mode = FLY_MODE_ON;
+		  HAL_TIM_Base_Start_IT(&htim7);
+		  strSize = sprintf((char*)buffer, "Wahana Mode On");
+		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+	  } else if(inputFlyMode >= 1900 && inputFlyMode <= 2100 && fly_mode != FLY_MODE_HOLD){
+		  fly_mode = FLY_MODE_HOLD;
+		  strSize = sprintf((char*)buffer, "Wahana Mode Hold");
+		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 	  }
-	  /*if(HMC5883L_GetReadyStatus(&hmc5883l)){
-		  HMC5883L_GetHeading(&hmc5883l, &x_heading, &y_heading, &z_heading);
-		  strSize = sprintf((char*)buffer, "x: %d\r\n y: %d\r\n z: %d\r\n", x_heading, y_heading, z_heading);
-		  HAL_UART_Transmit(&huart1, buffer, strSize, 30);
-	  }*/
-	  /*
-	  if(dutyCycle > ESC_PWM_MAX) dutyCycle = ESC_PWM_MIN;
-	  setPWM(htim3, TIM_CHANNEL_3, dutyCycle);
-	  dutyCycle = dutyCycle + 100;*/
-	  /*if(IMUDataStatus == 1){
-		  getIMUData(&IMU_Data);
-		  //strSize = sprintf(buffer, "YAW: %f, PITCH: %f, ROLL: %f\r\n", IMU_Data.YAW, IMU_Data.PITCH, IMU_Data.ROLL);
-		  strSize = sprintf(buffer, "%f\r\n", IMU_Data.YAW);
-		  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-		  IMUDataStatus = 0;
-	  }*/
-	  /*if(GPSDataStatus == 1){
-		  //int GPSBuffer_len = strlen(GPSBuffer);
-		  for(int i = 0; i < GPSBufferLength; i++){
-			  if(GPSBuffer[i] == '$') {
-				  char str[4] = {GPSBuffer[i+3], GPSBuffer[i+4], GPSBuffer[i+5], '\0'};
-				  if(strcmp("GGA", str) == 0){
-					  	int length = strchr(&GPSBuffer[i], '\n') - (unsigned)&GPSBuffer[i] + 1;
-					  	if(length <= 0) break;
-					  	GPS_String.GNGGA = (char*)malloc(length + 1);
-						memcpy(GPS_String.GNGGA, &GPSBuffer[i], length);
-						GPS_String.GNGGA[length] = '\0';
-						i = i + length;
-						HAL_UART_Transmit(&huart1, GPS_String.GNGGA, length, 100);
-				  }
 
-				  else if(strcmp("GLL", str) == 0){
-						int length = strchr(&GPSBuffer[i], '\n') - (unsigned)&GPSBuffer[i] + 1;
-					  	if(length <= 0) break;
-						GPS_String.GNGLL = (char*)malloc(length + 1);
-						memcpy(GPS_String.GNGLL, &GPSBuffer[i], length);
-						GPS_String.GNGLL[length] = '\0';
-						i = i + length;
-						HAL_UART_Transmit(&huart1, GPS_String.GNGLL, length, 100);
-				  }
-
-				  else if(strcmp("RMC", str) == 0){
-						int length = strchr(&GPSBuffer[i], '\n') - (unsigned)&GPSBuffer[i] + 1;
-					  	if(length <= 0) break;
-						GPS_String.GNRMC = (char*)malloc(length + 1);
-						memcpy(GPS_String.GNRMC, &GPSBuffer[i], length);
-						GPS_String.GNRMC[length] = '\0';
-						i = i + length;
-						HAL_UART_Transmit(&huart1, GPS_String.GNRMC, length, 100);
-				  } else continue;
-			  }  else continue;
-		  }
-		  //strSize = sprintf(buffer, "%s\r\n", GPSBuffer);
-		  GPSDataStatus = 0;
-		  memset(GPSBuffer, 0, GPSBufferLength);
-		  GPSBufferLength = 0;
-		  HAL_UART_Receive_DMA(&huart4, GPSBuffer, 800);
-	  }*/
-/*
-	  strSize = sprintf((char*)buffer, "RC CH1: %lu us\r\n", RC_CH1.DutyCycleVal);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-	  strSize = sprintf((char*)buffer, "RC CH2: %lu us\r\n", RC_CH2.DutyCycleVal);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-	  strSize = sprintf((char*)buffer, "RC CH3: %lu us\r\n", RC_CH3.DutyCycleVal);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-	  strSize = sprintf((char*)buffer, "RC CH4: %lu us\r\n", RC_CH4.DutyCycleVal);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-	  strSize = sprintf((char*)buffer, "RC CH5: %lu us\r\n", RC_CH5.DutyCycleVal);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
-*/
-	  //setPWM(htim2, TIM_CHANNEL_4, RC_CH3.DutyCycleVal);
-
-	  //HAL_Delay(500);
-
+	  getIMUData(&IMU_Data);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -351,9 +257,15 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 168;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -362,12 +274,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSE;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -461,7 +373,7 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 16 - 1;
+  htim1.Init.Prescaler = 168 - 1;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim1.Init.Period = 0xFFFF - 1;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -520,7 +432,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 16 - 1;
+  htim2.Init.Prescaler = 168 - 1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 20000 - 1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -545,7 +457,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 2000 - 1;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -591,7 +503,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 16 - 1;
+  htim3.Init.Prescaler = 168 - 1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 0xFFFF - 1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -653,7 +565,7 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 16 - 1;
+  htim4.Init.Prescaler = 168 - 1;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim4.Init.Period = 0xFFFF - 1;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -715,7 +627,7 @@ static void MX_TIM5_Init(void)
 
   /* USER CODE END TIM5_Init 1 */
   htim5.Instance = TIM5;
-  htim5.Init.Prescaler = 16 - 1;
+  htim5.Init.Prescaler = 168 - 1;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim5.Init.Period = 0xFFFF - 1;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -754,40 +666,40 @@ static void MX_TIM5_Init(void)
 }
 
 /**
-  * @brief TIM6 Initialization Function
+  * @brief TIM7 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM6_Init(void)
+static void MX_TIM7_Init(void)
 {
 
-  /* USER CODE BEGIN TIM6_Init 0 */
+  /* USER CODE BEGIN TIM7_Init 0 */
 
-  /* USER CODE END TIM6_Init 0 */
+  /* USER CODE END TIM7_Init 0 */
 
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  /* USER CODE BEGIN TIM6_Init 1 */
+  /* USER CODE BEGIN TIM7_Init 1 */
 
-  /* USER CODE END TIM6_Init 1 */
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 16 - 1;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 1000 - 1;
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 168 - 1;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 10000 - 1;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
   {
     Error_Handler();
   }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN TIM6_Init 2 */
+  /* USER CODE BEGIN TIM7_Init 2 */
 
-  /* USER CODE END TIM6_Init 2 */
+  /* USER CODE END TIM7_Init 2 */
 
 }
 
@@ -810,7 +722,7 @@ static void MX_TIM9_Init(void)
 
   /* USER CODE END TIM9_Init 1 */
   htim9.Instance = TIM9;
-  htim9.Init.Prescaler = 16 - 1;
+  htim9.Init.Prescaler = 168 - 1;
   htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim9.Init.Period = 0xFFFF;
   htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -839,39 +751,6 @@ static void MX_TIM9_Init(void)
   /* USER CODE BEGIN TIM9_Init 2 */
 
   /* USER CODE END TIM9_Init 2 */
-
-}
-
-/**
-  * @brief UART4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_UART4_Init(void)
-{
-
-  /* USER CODE BEGIN UART4_Init 0 */
-
-  /* USER CODE END UART4_Init 0 */
-
-  /* USER CODE BEGIN UART4_Init 1 */
-
-  /* USER CODE END UART4_Init 1 */
-  huart4.Instance = UART4;
-  huart4.Init.BaudRate = 115200;
-  huart4.Init.WordLength = UART_WORDLENGTH_8B;
-  huart4.Init.StopBits = UART_STOPBITS_1;
-  huart4.Init.Parity = UART_PARITY_NONE;
-  huart4.Init.Mode = UART_MODE_TX_RX;
-  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN UART4_Init 2 */
-
-  /* USER CODE END UART4_Init 2 */
 
 }
 
@@ -984,9 +863,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
@@ -1005,119 +884,46 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
 }
 
 /* USER CODE BEGIN 4 */
 
-void kinematic(uint32_t *output, uint32_t input1, uint32_t input2, uint32_t input3, uint32_t input4){
-	static double Tr, Tp, Tz, Ty;
-	const double KT=1, KQ=1, L=0.23;
-
-	double w1, w2, w3, w4;
-
-	Tr = map((double)input1, 1000, 2000, -10, 10);
-	Tp = map((double)input2, 1000, 2000, 10, -10);
-	Tz = map((double)input3, 1000, 2000, 1000, 2000);
-	Ty = map((double)input4, 1000, 2000, -5, 5);
 
 
-	  if (Tz == 1000.0f && Tr == 0.0f && Tp == 0.0f && Ty == 0.0f) {
-			output[0] = 1000;
-			output[1] = 1000;
-			output[2] = 1000;
-			output[3] = 1000;
-	  }
-	  else {
-			//QUADCOPTER
-			w1 = Tz/(4*KT) + Tr/(2*KT*L) + Ty/(2*KQ);
-			w2 = Tz/(4*KT) + Tp/(2*KT*L) - Ty/(2*KQ);
-			w3 = Tz/(4*KT) - Tp/(2*KT*L) - Ty/(2*KQ);
-			w4 = Tz/(4*KT) - Tr/(2*KT*L) + Ty/(2*KQ);
-
-			output[0] = (uint32_t)map(w1, 250, 500, 1000, 2000);
-
-			output[1] = (uint32_t)map(w2, 250, 500, 1000, 2000);
-			output[2] = (uint32_t)map(w3, 250, 500, 1000, 2000);
-			output[3] = (uint32_t)map(w4, 250, 500, 1000, 2000);
-
-			output[0] = constrain(output[0], 1000, 2000);
-			output[1] = constrain(output[1], 1000, 2000);
-			output[2] = constrain(output[2], 1000, 2000);
-			output[3] = constrain(output[3], 1000, 2000);
-	  }
-}
-
-void initPWM_DATA(struct PWM_DATA* pwm_data, TIM_HandleTypeDef *htim, uint32_t channel){
+void initPWM_DATA(PWM_DATA* pwm_data, TIM_HandleTypeDef *htim, uint32_t channel){
 	pwm_data->onFallingEdge = false;
 	pwm_data->onRisingEdge = true;
 	pwm_data->channel = channel;
 	pwm_data->htim = htim;
 }
 
-void getIMUData(struct IMU_DATA *IMU_Data){
-	  uint8_t YPR[8];
-	  IMU_Data->YAW = 1000.0f, IMU_Data->PITCH = 1000.0f, IMU_Data->ROLL = 1000.0f;
-	  char* buf;
-	  buf = memchr(IMUBuffer, 0xAA, 16);
-	  memcpy(YPR, buf, 8);
-	  if(YPR[0] == 0xAA && YPR[7] == 0x55){
-		  IMU_Data->YAW = (YPR[1] << 8 | YPR[2]) * 0.01f;
-		  if(IMU_Data->YAW > 179) IMU_Data->YAW = IMU_Data->YAW - 655;
-
-		  IMU_Data->PITCH = (YPR[3] << 8 | YPR[4]) * 0.01f;
-		  if(IMU_Data->PITCH > 179) IMU_Data->PITCH = IMU_Data->PITCH - 655;
-
-		  IMU_Data->ROLL = (YPR[5] << 8 | YPR[6]) * 0.01f;
-		  if(IMU_Data->ROLL > 179) IMU_Data->ROLL = IMU_Data->ROLL - 655;
-	  }
-	  //strSize = sprintf(buffer, "YAW: %f, PITCH: %f, ROLL: %f\r\n", IMU_Data.YAW, IMU_Data.PITCH, IMU_Data.ROLL);
-	  //HAL_UART_Transmit(&huart3, buffer, strSize, 100);
-}
-
 void setPWM(TIM_HandleTypeDef htim, uint32_t channel, uint32_t dutyCycle){
-	HAL_TIM_PWM_Stop(&htim, channel);
-	TIM_OC_InitTypeDef sConfigOC;
-	htim.Init.Period = 20000 - 1;
-	HAL_TIM_PWM_Init(&htim);
-	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	sConfigOC.Pulse = dutyCycle;
-	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-	HAL_TIM_PWM_ConfigChannel(&htim, &sConfigOC, channel);
-
-	HAL_TIM_PWM_Start(&htim, channel);
-
+	__HAL_TIM_SET_COMPARE(&htim, channel, dutyCycle);
 }
 
-void CalibrateESC(){
+void ESCInit(){
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+	setPWM(htim2, TIM_CHANNEL_1, ESC_PWM_MAX);
+	setPWM(htim2, TIM_CHANNEL_2, ESC_PWM_MAX);
+	setPWM(htim2, TIM_CHANNEL_3, ESC_PWM_MAX);
 	setPWM(htim2, TIM_CHANNEL_4, ESC_PWM_MAX);
 	HAL_Delay(2000);
-	setPWM(htim3, TIM_CHANNEL_4, ESC_PWM_MIN);
+	setPWM(htim2, TIM_CHANNEL_1, ESC_PWM_MIN);
+	setPWM(htim2, TIM_CHANNEL_2, ESC_PWM_MIN);
+	setPWM(htim2, TIM_CHANNEL_3, ESC_PWM_MIN);
+	setPWM(htim2, TIM_CHANNEL_4, ESC_PWM_MIN);
 	HAL_Delay(2000);
-}
-
-void HMC5883LInit(){
-	HMC5883L_set_default_params(&hmc5883l);
-	hmc5883l.hi2c = &hi2c3;
-
-	HMC5883L_Initialize(&hmc5883l);
-	HAL_Delay(1000);
-	while(!HMC5883L_TestConnection(&hmc5883l)){
-		strSize = sprintf((char*)buffer, "HMC5883L Gagal!\r\n");
-		HAL_UART_Transmit(&huart1, buffer, strSize, 20);
-		HMC5883L_Initialize(&hmc5883l);
-		HAL_Delay(500);
-	}
-
-	strSize = sprintf((char*)buffer, "Koneksi HMC5883L Sukses!\r\n");
-	HAL_UART_Transmit(&huart1, buffer, strSize, 20);
 }
 
 void BMPInit(){
+	kalman_init(&kalman_altitude, 0.1, 0.1, 0.03);
 	bmp280_init_default_params(&bmp280.params);
 	bmp280.addr = BMP280_I2C_ADDRESS_0;
 	bmp280.i2c = &hi2c1;
@@ -1125,6 +931,7 @@ void BMPInit(){
 	while(!bmp280_init(&bmp280, &bmp280.params)){
 		strSize = sprintf((char*)buffer, "BMP280 initialization failed\r\n");
 		HAL_UART_Transmit(&huart1, buffer, strSize, 1000);
+		HAL_Delay(50);
 	}
 	HAL_Delay(1000);
 	bme280p = bmp280.id == BME280_CHIP_ID;
@@ -1135,48 +942,210 @@ void BMPInit(){
 	HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 
 	float pres_total = 0;
+	float pressure, temperature, humidity;
 
 	for(int i = 0; i < 100; ++i){
-		while(bmp280_is_measuring(&bmp280)){
-			continue;
-		}
+		while(bmp280_is_measuring(&bmp280)) continue;
 		bmp280_read_float(&bmp280, &temperature, &pressure, &humidity);
-		HAL_UART_Transmit(&huart1, ".", 1, 10);
+		HAL_UART_Transmit(&huart1, (uint8_t*)".", 1, 10);
 		pres_total = pres_total + pressure;
 	}
 
 	pressureRef = pres_total / 100;
 	strSize = sprintf((char*)buffer,"Done!\r\n");
 	HAL_UART_Transmit(&huart1, buffer, strSize, 10);
-	HAL_Delay(2000);
+	HAL_Delay(1000);
+}
+
+void GPSInit(){
+	  //__HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
+
+	  if(HAL_UART_Receive_DMA(&huart3, gps_rx_buf, GPS_BUF_SIZE) != HAL_OK){
+		  Error_Handler();
+	  }
+
+	  __HAL_DMA_DISABLE_IT(huart3.hdmarx, DMA_IT_HT);
+
+	  strSize = sprintf((char*)buffer, "GPS Done!\r\n");
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+}
+
+void CompassInit(){
+	I2Cdev_init(&hi2c3);
+
+	HMC5883L_initialize();
+	while(!HMC5883L_testConnection()){
+		strSize = sprintf((char*)buffer, "Inisialisasi HMC5883L gagal!\r\n");
+		HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+		HAL_Delay(10);
+	}
+	strSize = sprintf((char*)buffer, "HMC5883L Sukses!\r\n");
+	HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+}
+
+void RemoteInit(){
+	  fly_mode = FLY_MODE_OFF;
+	  strSize = sprintf((char*)buffer, "Wahana Mode Off");
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+
+	  initPWM_DATA(&RC_CH1, &htim3, TIM_CHANNEL_2);
+	  initPWM_DATA(&RC_CH2, &htim9, TIM_CHANNEL_2);
+	  initPWM_DATA(&RC_CH3, &htim5, TIM_CHANNEL_1);
+	  initPWM_DATA(&RC_CH4, &htim3, TIM_CHANNEL_1);
+	  initPWM_DATA(&RC_CH5, &htim4, TIM_CHANNEL_1);
+	  HAL_TIM_IC_Start_IT(RC_CH1.htim, RC_CH1.channel);
+	  HAL_TIM_IC_Start_IT(RC_CH2.htim, RC_CH2.channel);
+	  HAL_TIM_IC_Start_IT(RC_CH3.htim, RC_CH3.channel);
+	  HAL_TIM_IC_Start_IT(RC_CH4.htim, RC_CH4.channel);
+	  HAL_TIM_IC_Start_IT(RC_CH5.htim, RC_CH5.channel);
 }
 
 void IMUInit(){
-	  HAL_Delay(1000);
-	  huart2Status = HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
-	  huart2Status = HAL_UART_Transmit(&huart2, (u_char*)0x54, 1, 10);
+	  HAL_Delay(3000);
+	  HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
+	  HAL_UART_Transmit(&huart2, (u_char*)0x54, 1, 10);
 
 	  HAL_Delay(3000);
 	  strSize = sprintf((char*)buffer,"Kalibrasi tilt done\r\n");
-	  huart3Status = HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 
 	  //Kalibrasi heading
-	  HAL_Delay(1000);
-	  huart2Status = HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
-	  huart2Status = HAL_UART_Transmit(&huart2, (u_char*)0x55, 1, 10);
+	  HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
+	  HAL_UART_Transmit(&huart2, (u_char*)0x55, 1, 10);
+	  HAL_Delay(3000);
 
 	  strSize = sprintf((char*)buffer,"Kalibrasi heading done\r\n");
-	  huart3Status = HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 
 	  //Konfigurasi Output ASCII
-	  HAL_Delay(100);
-	  huart2Status = HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
-	  huart2Status = HAL_UART_Transmit(&huart2, (u_char*)0x52, 1, 10);
+	  HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
+	  HAL_UART_Transmit(&huart2, (u_char*)0x52, 1, 10);
+	  HAL_Delay(1000);
 
-	  huart2Status = HAL_UART_Receive_DMA(&huart2, IMUBuffer, 16);
+	  HAL_UART_Receive_DMA(&huart2, IMUBuffer, 16);
+
+	  float pitchTotal = 0, yawTotal = 0, rollTotal = 0;
+
+	  int i = 0;
+	  while(i < 100){
+		  if(IMUDataStatus){
+			  i += 1;
+			  getIMUData(&IMU_Data);
+			  pitchTotal += IMU_Data.PITCH;
+			  yawTotal += IMU_Data.YAW;
+			  rollTotal += IMU_Data.ROLL;
+		  } else continue;
+	  }
+	  pitchRef = pitchTotal / 100;
+	  yawRef = yawTotal / 100;
+	  rollRef = rollTotal / 100;
 }
 
-void setPWM_DATA(struct PWM_DATA* pwm_data){
+void getBMPAltitude(){
+	if(!bmp280_is_measuring(&bmp280)){
+		  float pressure, temperature, humidity;
+		  bmp280_read_float(&bmp280, &temperature, &pressure, &humidity);
+		  float altitude_reading = bmp280_read_altitude(pressure/100, pressureRef/100);
+		  float estimated_altitude = kalman_updateEstimate(&kalman_altitude, altitude_reading);
+		  altitude = estimated_altitude;
+		  //strSize = sprintf((char*)buffer, "%f\r\n", estimated_altitude);
+		  //HAL_UART_Transmit(&huart1, buffer, strSize, 1);
+	}
+}
+
+void getCompass(){
+	  if(HMC5883L_getReadyStatus()){
+		  HMC5883L_getHeading(&x_heading, &y_heading, &z_heading);
+		  //strSize = sprintf((char*)buffer, "X: %d\tY: %d\tZ: %d\r\n", x, y, z);
+		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  }
+}
+
+void getGPSLatLon(){
+	  if(GPSDataStatus){
+		  char *pointer;
+		  int length = sizeof(GPSBuffer);
+
+		  memset(lat, '\0', 20);
+		  memset(lon, '\0', 20);
+		  pointer = strchr((char*)GPSBuffer, '$');
+
+		  do{
+			  char *ptrstart;
+			  char *ptrend;
+
+			  if(strncmp(pointer, "$GNGGA" , 6) == 0){ //$GNGGA
+				  ptrstart = (char*)memchr(pointer + 1, ',', length);
+				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
+				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  } else if(strncmp(pointer, "$GNGLL", 6) == 0){ //$GNGLL
+				  ptrstart = (char*)memchr(pointer + 1, ',', length);
+				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  } else if(strncmp(pointer, "$GNRMC", 6) == 0){ //$GNRMC
+				  ptrstart = (char*)memchr(pointer + 1, ',', length);
+				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
+				  ptrstart = (char*)memchr(ptrstart + 1, ',', length);
+				  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  } else {
+				  pointer = strchr(pointer + 6, '$');
+				  continue;
+			  }
+
+			  for(int i = 1; i < (ptrend - ptrstart); i++) lat[i - 1] = ptrstart[i];
+			  lat_a = *(ptrend + 1);
+
+			  ptrstart = (char*)memchr(ptrend + 1, ',', length);
+			  ptrend = (char*)memchr(ptrstart + 1, ',', length);
+
+			  for(int i = 1; i < (ptrend - ptrstart); i++) lon[i - 1] = ptrstart[i];
+			  lon_a = *(ptrend + 1);
+			  if(lon[0] != '\0' && lat[0] != '\0'){
+				  //strSize = sprintf((char*)buffer, "Lat: %s | %c\tLon: %s | %c\r\n", lat, lat_a, lon, lon_a);
+				  //HAL_UART_Transmit(&huart1, buffer , strSize, 100);
+				  break;
+			  }
+			  pointer = strchr(pointer + 4, '$');
+		  }
+		  while(pointer != NULL);
+		  GPSDataStatus = false;
+	  }
+}
+
+void getIMUData(IMU_DATA *IMU_Data){
+	if(IMUDataStatus){
+		  uint8_t YPR[8];
+		  IMU_Data->YAW = 1000.0f, IMU_Data->PITCH = 1000.0f, IMU_Data->ROLL = 1000.0f;
+		  char* buf;
+		  buf = memchr(IMUBuffer, 0xAA, 16);
+		  memcpy(YPR, buf, 8);
+		  if(YPR[0] == 0xAA && YPR[7] == 0x55){
+			  IMU_Data->YAW = (float)((YPR[1] << 8 | YPR[2]) * 0.01f);
+			  if(IMU_Data->YAW > 179) IMU_Data->YAW = IMU_Data->YAW - 655;
+
+			  sensorYaw = IMU_Data->YAW - yawRef;
+
+			  IMU_Data->PITCH = (float)((YPR[3] << 8 | YPR[4]) * 0.01f);
+			  if(IMU_Data->PITCH > 179) IMU_Data->PITCH = IMU_Data->PITCH - 655;
+
+			  sensorPitch = IMU_Data->PITCH - pitchRef;
+
+			  IMU_Data->ROLL = (float)((YPR[5] << 8 | YPR[6]) * 0.01f);
+			  if(IMU_Data->ROLL > 179) IMU_Data->ROLL = IMU_Data->ROLL - 655;
+
+			  sensorRoll = IMU_Data->ROLL - rollRef;
+
+			  //strSize = sprintf((char*)buffer, "Y: %f, P: %f, R: %f\r\n", sensorYaw, sensorPitch, sensorRoll);
+			  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+		  }
+		  IMUDataStatus = false;
+	}
+
+}
+
+void setPWM_DATA(PWM_DATA* pwm_data){
 	if(pwm_data->onRisingEdge && !pwm_data->onFallingEdge){
 		pwm_data->onRisingEdge = false;
 		pwm_data->onFallingEdge = true;
@@ -1204,61 +1173,50 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
            the HAL_UART_RxCpltCallback could be implemented in the user file
    */
   //HAL_UART_Transmit(&huart3, RxBuffer, 8, 100);
-  if(huart->Instance == USART2 && IMUDataStatus == 0)
-	  IMUDataStatus = 1;
+  if(huart->Instance == USART2 && !IMUDataStatus)
+	  IMUDataStatus = true;
 
-  else if(huart->Instance == UART4 && GPSDataStatus == 0){
-	  if(__HAL_UART_GET_FLAG (&huart4, UART_FLAG_IDLE)){
-			  GPSBufferLength = 1000 - __HAL_DMA_GET_COUNTER(&hdma_uart4_rx);
-		  	  GPSDataStatus = 1;
-			  HAL_UART_DMAStop(&huart4);
-	  }
+  if(huart->Instance == USART3){
+	  memcpy(GPSBuffer, gps_rx_buf, GPS_BUF_SIZE);
+	  GPSDataStatus = true;
   }
+ }
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if(htim->Instance == TIM7 && (fly_mode == FLY_MODE_ON || fly_mode == FLY_MODE_HOLD)){
+		PIDRoll.timesampling = PIDYaw.timesampling = PIDPitch.timesampling = 0.01;
+		PIDControl(&PIDRoll, sensorRoll, inputRoll);
+		PIDControl(&PIDPitch, sensorPitch, inputPitch);
+		PIDControl(&PIDYaw, sensorYaw, inputYaw);
+		trustControl();
+	}
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 	if(htim == RC_CH1.htim){
 		if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2){
 			setPWM_DATA(&RC_CH1);
+			inputRoll = map((float)RC_CH1.DutyCycleVal, 1000, 2000, -30, 30);
+			inputRoll = constrain(inputRoll, -30, 30);
 		} else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1){
 			setPWM_DATA(&RC_CH4);
+			inputYaw = map((float)RC_CH4.DutyCycleVal, 1000, 2000, -30, 30);
+			inputYaw = constrain(inputYaw, -30, 30);
 		}
 	}
 	else if(htim == RC_CH2.htim){
 		setPWM_DATA(&RC_CH2);
+		inputPitch = map((float)RC_CH2.DutyCycleVal, 1000, 2000, -30, 30);
+		inputPitch = constrain(inputPitch, -30, 30);
 	}
 	else if(htim == RC_CH3.htim) {
 		setPWM_DATA(&RC_CH3);
-	}
-	else if(htim == RC_CH4.htim) {
-		setPWM_DATA(&RC_CH4);
+		inputThrottle = constrain(RC_CH3.DutyCycleVal, 1000, 2000);
 	}
 	else if(htim == RC_CH5.htim) {
 		setPWM_DATA(&RC_CH5);
-	}
-}
+		inputFlyMode = constrain(RC_CH5.DutyCycleVal, 1000, 2000);
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(htim->Instance == TIM6){
-/*		  while(!bmp280_read_float(&bmp280, &temperature, &pressure, &humidity)){
-				  strSize = sprintf((char*)buffer, "Temperature/pressure reading failed\r\n");
-				  HAL_UART_Transmit(&huart3, buffer, strSize, 100);
-			  }
-
-			  float altitude = bmp280_read_altitude(pressure / 100, pressureRef / 100);
-			  strSize = sprintf((char*)buffer, "Pressure: %.2f Pa, Temperature: %.2f C, Altitude: %.2f m, ", pressure, temperature, altitude);
-			  HAL_UART_Transmit(&huart3, buffer, strSize, 100);
-
-			  if(bme280p){
-				  strSize = sprintf((char *)buffer,", Humidity: %.2f\r\n", humidity);
-				  HAL_UART_Transmit(&huart3, buffer, strSize, 100);
-			  } else {
-				  strSize = sprintf((char *)buffer, "\r\n");
-				  HAL_UART_Transmit(&huart3, buffer, strSize, 100);
-			  }*/
-		bmp280_read_float(&bmp280, &temperature, &pressure, &humidity);
-		strSize = sprintf((char*)buffer, "%f\r\n", pressure);
-		//HAL_UART_Transmit(&huart3, buffer, strSize, 1);
 	}
 }
 /* USER CODE END 4 */

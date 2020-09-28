@@ -1,12 +1,17 @@
-//HMC5883L I2C library for ARM STM32F103xx Microcontrollers - Main header file
-//Has bit, byte and buffer I2C R/W functions
-// 24/05/2012 by Harinadha Reddy Chintalapalli <harinath.ec@gmail.com>
+// I2Cdev library collection - HMC5883L I2C device class
+// Based on Honeywell HMC5883L datasheet, 10/2010 (Form #900405 Rev B)
+// 6/12/2012 by Jeff Rowberg <jeff@rowberg.net>
+// 6/6/2015 by Andrey Voloshin <voloshin@think.in.ua>
+//
 // Changelog:
-//     2012-05-24 - initial release. Thanks to Jeff Rowberg <jeff@rowberg.net> for his AVR/Arduino
-//                  based development which inspired me & taken as reference to develop this.
-/* ============================================================================================
-HMC5883L device I2C library code for ARM STM32F103xx is placed under the MIT license
-Copyright (c) 2012 Harinadha Reddy Chintalapalli
+//      2015-06-06 - ported to STM32 HAL library from Arduino code
+//     2012-06-12 - fixed swapped Y/Z axes
+//     2011-08-22 - small Doxygen comment fixes
+//     2011-07-31 - initial release
+
+/* ============================================
+I2Cdev device library code is placed under the MIT license
+Copyright (c) 2012 Jeff Rowberg
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,13 +30,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-================================================================================================
+===============================================
 */
+
 #include "HMC5883L.h"
 
-/** @defgroup HMC5883L_Library
-* @{
-*/
+static uint8_t devAddr;
+static uint8_t buffer[6];
+static uint8_t mode;
+
 
 /** Power on and prepare for general usage.
  * This will prepare the magnetometer with default settings, ready for single-
@@ -41,50 +48,32 @@ THE SOFTWARE.
  * after initialization, especially the gain settings if you happen to be seeing
  * a lot of -4096 values (see the datasheet for mor information).
  */
-
-void HMC5883L_set_default_params(HMC5883L_t *hmc5883l){
-	hmc5883l->address = HMC5883L_DEFAULT_ADDRESS;
-	hmc5883l->averaging = HMC5883L_AVERAGING_8;
-	hmc5883l->rate = HMC5883L_RATE_15;
-	hmc5883l->bias = HMC5883L_BIAS_NORMAL;
-	hmc5883l->gain = HMC5883L_GAIN_1090;
-	hmc5883l->mode = HMC5883L_MODE_CONTINUOUS;
-}
-
-void HMC5883L_Initialize(HMC5883L_t *hmc5883l)
-{
+void HMC5883L_initialize() {
+    devAddr = HMC5883L_DEFAULT_ADDRESS;
     // write CONFIG_A register
-
-    /*uint8_t tmp = (HMC5883L_AVERAGING_8 << (HMC5883L_CRA_AVERAGE_BIT - HMC5883L_CRA_AVERAGE_LENGTH + 1)) |
-                  (HMC5883L_RATE_15     << (HMC5883L_CRA_RATE_BIT - HMC5883L_CRA_RATE_LENGTH + 1)) |
-                  (HMC5883L_BIAS_NORMAL << (HMC5883L_CRA_BIAS_BIT - HMC5883L_CRA_BIAS_LENGTH + 1)) ;
-    HMC5883L_I2C_ByteWrite(HMC5883L_DEFAULT_ADDRESS, &tmp ,HMC5883L_RA_CONFIG_A);*/
-
-    uint8_t tmp = (hmc5883l->averaging << (HMC5883L_CRA_AVERAGE_BIT - HMC5883L_CRA_AVERAGE_LENGTH + 1)) |
-                  (hmc5883l->rate     << (HMC5883L_CRA_RATE_BIT - HMC5883L_CRA_RATE_LENGTH + 1)) |
-                  (hmc5883l->bias<< (HMC5883L_CRA_BIAS_BIT - HMC5883L_CRA_BIAS_LENGTH + 1)) ;
-    HMC5883L_I2C_ByteWrite(hmc5883l, &tmp, HMC5883L_RA_CONFIG_A);
+    I2Cdev_writeByte(devAddr, HMC5883L_RA_CONFIG_A,
+        (HMC5883L_AVERAGING_8 << (HMC5883L_CRA_AVERAGE_BIT - HMC5883L_CRA_AVERAGE_LENGTH + 1)) |
+        (HMC5883L_RATE_15     << (HMC5883L_CRA_RATE_BIT - HMC5883L_CRA_RATE_LENGTH + 1)) |
+        (HMC5883L_BIAS_NORMAL << (HMC5883L_CRA_BIAS_BIT - HMC5883L_CRA_BIAS_LENGTH + 1)));
 
     // write CONFIG_B register
-    HMC5883L_SetGain(hmc5883l, hmc5883l->gain);
+    HMC5883L_setGain(HMC5883L_GAIN_1090);
 
     // write MODE register
-    HMC5883L_SetMode(hmc5883l, hmc5883l->mode);
+    HMC5883L_setMode(HMC5883L_MODE_CONTINUOUS);
 }
 
 /** Verify the I2C connection.
  * Make sure the device is connected and responds as expected.
  * @return True if connection is valid, false otherwise
  */
-bool HMC5883L_TestConnection(HMC5883L_t *hmc5883l)
-{
-      uint8_t tmp[3]={0};
-      HMC5883L_I2C_BufferRead(hmc5883l, tmp, HMC5883L_RA_ID_A, 3);
-      if((tmp[0] == 'H' && tmp[1] == '4' && tmp[2] == '3'))
-        return true;
-      else
-        return false;
+bool HMC5883L_testConnection() {
+    if (I2Cdev_readBytes(devAddr, HMC5883L_RA_ID_A, 3, buffer, 0) == 3) {
+        return (buffer[0] == 'H' && buffer[1] == '4' && buffer[2] == '3');
+    }
+    return false;
 }
+
 // CONFIG_A register
 
 /** Get number of samples averaged per measurement.
@@ -94,12 +83,9 @@ bool HMC5883L_TestConnection(HMC5883L_t *hmc5883l)
  * @see HMC5883L_CRA_AVERAGE_BIT
  * @see HMC5883L_CRA_AVERAGE_LENGTH
  */
-uint8_t HMC5883L_GetSampleAveraging(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBits(hmc5883l, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_AVERAGE_BIT, HMC5883L_CRA_AVERAGE_LENGTH, &tmp);
-    hmc5883l->averaging = tmp;
-    return tmp;
+uint8_t HMC5883L_getSampleAveraging() {
+    I2Cdev_readBits(devAddr, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_AVERAGE_BIT, HMC5883L_CRA_AVERAGE_LENGTH, buffer, 0);
+    return buffer[0];
 }
 /** Set number of samples averaged per measurement.
  * @param averaging New samples averaged per measurement setting(0-3 for 1/2/4/8 respectively)
@@ -107,13 +93,10 @@ uint8_t HMC5883L_GetSampleAveraging(HMC5883L_t *hmc5883l)
  * @see HMC5883L_CRA_AVERAGE_BIT
  * @see HMC5883L_CRA_AVERAGE_LENGTH
  */
-void HMC5883L_SetSampleAveraging(HMC5883L_t *hmc5883l, uint8_t averaging)
-{
-    HMC5883L_WriteBits(hmc5883l, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_AVERAGE_BIT, HMC5883L_CRA_AVERAGE_LENGTH, averaging);
-    hmc5883l->averaging = averaging;
+void HMC5883L_setSampleAveraging(uint8_t averaging) {
+    I2Cdev_writeBits(devAddr, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_AVERAGE_BIT, HMC5883L_CRA_AVERAGE_LENGTH, averaging);
 }
-/** \code
- * Get data output rate value.
+/** Get data output rate value.
  * The Table below shows all selectable output rates in continuous measurement
  * mode. All three channels shall be measured within a given output rate. Other
  * output rates with maximum rate of 160 Hz can be achieved by monitoring DRDY
@@ -129,32 +112,27 @@ void HMC5883L_SetSampleAveraging(HMC5883L_t *hmc5883l, uint8_t averaging)
  * 5     | 30
  * 6     | 75
  * 7     | Not used
- * \endcode
+ *
  * @return Current rate of data output to registers
  * @see HMC5883L_RATE_15
  * @see HMC5883L_RA_CONFIG_A
  * @see HMC5883L_CRA_RATE_BIT
  * @see HMC5883L_CRA_RATE_LENGTH
  */
-uint8_t HMC5883L_GetDataRate(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBits(hmc5883l, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_RATE_BIT, HMC5883L_CRA_RATE_LENGTH, &tmp);
-    hmc5883l->rate = tmp;
-    return tmp;
+uint8_t HMC5883L_getDataRate() {
+    I2Cdev_readBits(devAddr, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_RATE_BIT, HMC5883L_CRA_RATE_LENGTH, buffer, 0);
+    return buffer[0];
 }
 /** Set data output rate value.
  * @param rate Rate of data output to registers
- * @see HMC5883L_SetDataRate()
+ * @see getDataRate()
  * @see HMC5883L_RATE_15
  * @see HMC5883L_RA_CONFIG_A
  * @see HMC5883L_CRA_RATE_BIT
  * @see HMC5883L_CRA_RATE_LENGTH
  */
-void HMC5883L_SetDataRate(HMC5883L_t *hmc5883l, uint8_t rate)
-{
-    HMC5883L_WriteBits(hmc5883l, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_RATE_BIT, HMC5883L_CRA_RATE_LENGTH, rate);
-    hmc5883l->rate = rate;
+void HMC5883L_setDataRate(uint8_t rate) {
+    I2Cdev_writeBits(devAddr, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_RATE_BIT, HMC5883L_CRA_RATE_LENGTH, rate);
 }
 /** Get measurement bias value.
  * @return Current bias value (0-2 for normal/positive/negative respectively)
@@ -163,12 +141,9 @@ void HMC5883L_SetDataRate(HMC5883L_t *hmc5883l, uint8_t rate)
  * @see HMC5883L_CRA_BIAS_BIT
  * @see HMC5883L_CRA_BIAS_LENGTH
  */
-uint8_t HMC5883L_GetMeasurementBias(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBits(hmc5883l, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_BIAS_BIT, HMC5883L_CRA_BIAS_LENGTH, &tmp);
-    hmc5883l->bias = tmp;
-    return tmp;
+uint8_t HMC5883L_getMeasurementBias() {
+    I2Cdev_readBits(devAddr, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_BIAS_BIT, HMC5883L_CRA_BIAS_LENGTH, buffer, 0);
+    return buffer[0];
 }
 /** Set measurement bias value.
  * @param bias New bias value (0-2 for normal/positive/negative respectively)
@@ -177,16 +152,13 @@ uint8_t HMC5883L_GetMeasurementBias(HMC5883L_t *hmc5883l)
  * @see HMC5883L_CRA_BIAS_BIT
  * @see HMC5883L_CRA_BIAS_LENGTH
  */
-void HMC5883L_SetMeasurementBias(HMC5883L_t *hmc5883l, uint8_t bias)
-{
-    HMC5883L_WriteBits(hmc5883l, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_BIAS_BIT, HMC5883L_CRA_BIAS_LENGTH, bias);
-    hmc5883l->bias = bias;
+void HMC5883L_setMeasurementBias(uint8_t bias) {
+    I2Cdev_writeBits(devAddr, HMC5883L_RA_CONFIG_A, HMC5883L_CRA_BIAS_BIT, HMC5883L_CRA_BIAS_LENGTH, bias);
 }
 
 // CONFIG_B register
 
-/** \code
- * Get magnetic field gain value.
+/** Get magnetic field gain value.
  * The table below shows nominal gain settings. Use the "Gain" column to convert
  * counts to Gauss. Choose a lower gain value (higher GN#) when total field
  * strength causes overflow in one of the data output registers (saturation).
@@ -202,35 +174,29 @@ void HMC5883L_SetMeasurementBias(HMC5883L_t *hmc5883l, uint8_t bias)
  * 5     | +/- 4.7 Ga  | 390
  * 6     | +/- 5.6 Ga  | 330
  * 7     | +/- 8.1 Ga  | 230
- * \endcode
+ *
  * @return Current magnetic field gain value
  * @see HMC5883L_GAIN_1090
  * @see HMC5883L_RA_CONFIG_B
  * @see HMC5883L_CRB_GAIN_BIT
  * @see HMC5883L_CRB_GAIN_LENGTH
  */
-uint8_t HMC5883L_GetGain(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBits(hmc5883l, HMC5883L_RA_CONFIG_B, HMC5883L_CRB_GAIN_BIT, HMC5883L_CRB_GAIN_LENGTH, &tmp);
-    hmc5883l->gain = tmp;
-    return tmp;
+uint8_t HMC5883L_getGain() {
+    I2Cdev_readBits(devAddr, HMC5883L_RA_CONFIG_B, HMC5883L_CRB_GAIN_BIT, HMC5883L_CRB_GAIN_LENGTH, buffer, 0);
+    return buffer[0];
 }
-
 /** Set magnetic field gain value.
  * @param gain New magnetic field gain value
- * @see HMC5883L_GetGain()
+ * @see getGain()
  * @see HMC5883L_RA_CONFIG_B
  * @see HMC5883L_CRB_GAIN_BIT
  * @see HMC5883L_CRB_GAIN_LENGTH
  */
-void HMC5883L_SetGain(HMC5883L_t *hmc5883l, uint8_t gain)
-{
+void HMC5883L_setGain(uint8_t gain) {
     // use this method to guarantee that bits 4-0 are set to zero, which is a
-    // requirement specified in the datasheet;
-    uint8_t tmp = gain << (HMC5883L_CRB_GAIN_BIT - HMC5883L_CRB_GAIN_LENGTH + 1);
-    HMC5883L_I2C_ByteWrite(hmc5883l, &tmp, HMC5883L_RA_CONFIG_B);
-    hmc5883l->gain = gain;
+    // requirement specified in the datasheet; it's actually more efficient than
+    // using the I2Cdev.writeBits method
+    I2Cdev_writeByte(devAddr, HMC5883L_RA_CONFIG_B, gain << (HMC5883L_CRB_GAIN_BIT - HMC5883L_CRB_GAIN_LENGTH + 1));
 }
 
 // MODE register
@@ -257,16 +223,13 @@ void HMC5883L_SetGain(HMC5883L_t *hmc5883l, uint8_t gain)
  * @see HMC5883L_MODEREG_BIT
  * @see HMC5883L_MODEREG_LENGTH
  */
-uint8_t HMC5883L_GetMode(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBits(hmc5883l, HMC5883L_RA_MODE, HMC5883L_MODEREG_BIT, HMC5883L_MODEREG_LENGTH, &tmp);
-    hmc5883l->mode = tmp;
-    return tmp;
+uint8_t HMC5883L_getMode() {
+    I2Cdev_readBits(devAddr, HMC5883L_RA_MODE, HMC5883L_MODEREG_BIT, HMC5883L_MODEREG_LENGTH, buffer, 0);
+    return buffer[0];
 }
 /** Set measurement mode.
  * @param newMode New measurement mode
- * @see HMC5883L_GetMode()
+ * @see getMode()
  * @see HMC5883L_MODE_CONTINUOUS
  * @see HMC5883L_MODE_SINGLE
  * @see HMC5883L_MODE_IDLE
@@ -274,13 +237,12 @@ uint8_t HMC5883L_GetMode(HMC5883L_t *hmc5883l)
  * @see HMC5883L_MODEREG_BIT
  * @see HMC5883L_MODEREG_LENGTH
  */
-void HMC5883L_SetMode(HMC5883L_t *hmc5883l, uint8_t newMode)
-{
+void HMC5883L_setMode(uint8_t newMode) {
     // use this method to guarantee that bits 7-2 are set to zero, which is a
-    // requirement specified in the datasheet;
-    uint8_t tmp =  hmc5883l->mode << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1);
-    HMC5883L_I2C_ByteWrite(hmc5883l, &tmp, HMC5883L_RA_MODE);
-    hmc5883l->mode = newMode;
+    // requirement specified in the datasheet; it's actually more efficient than
+    // using the I2Cdev.writeBits method
+    I2Cdev_writeByte(devAddr, HMC5883L_RA_MODE, newMode << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1));
+    mode = newMode; // track to tell if we have to clear bit 7 after a read
 }
 
 // DATA* registers
@@ -291,23 +253,50 @@ void HMC5883L_SetMode(HMC5883L_t *hmc5883l, uint8_t newMode)
  * register will contain the value -4096. This register value will clear when
  * after the next valid measurement is made. Note that this method automatically
  * clears the appropriate bit in the MODE register if Single mode is active.
- * @param x 16-bit signed integer container for X,Y,Z-axis heading
+ * @param x 16-bit signed integer container for X-axis heading
+ * @param y 16-bit signed integer container for Y-axis heading
+ * @param z 16-bit signed integer container for Z-axis heading
  * @see HMC5883L_RA_DATAX_H
  */
-void HMC5883L_GetHeading(HMC5883L_t *hmc5883l, int *x_heading, int *y_heading, int *z_heading)
-{
-    uint8_t tmpbuff[6]={0};
-    HMC5883L_I2C_BufferRead(hmc5883l, tmpbuff, HMC5883L_RA_DATAX_H, 6);
-
-    uint8_t tmp = HMC5883L_MODE_SINGLE << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1);
-
-    if (hmc5883l->mode == HMC5883L_MODE_SINGLE)
-      HMC5883L_I2C_ByteWrite(hmc5883l, &tmp, HMC5883L_RA_MODE);
-
-    *x_heading = ((int)((uint16_t)tmpbuff[0] << 8) + tmpbuff[1]);
-    *y_heading = ((int)((uint16_t)tmpbuff[2] << 8) + tmpbuff[3]);
-    *z_heading = ((int)((uint16_t)tmpbuff[4] << 8) + tmpbuff[5]);
-
+void HMC5883L_getHeading(int16_t *x, int16_t *y, int16_t *z) {
+    I2Cdev_readBytes(devAddr, HMC5883L_RA_DATAX_H, 6, buffer, 0);
+    if (mode == HMC5883L_MODE_SINGLE) I2Cdev_writeByte(devAddr, HMC5883L_RA_MODE, HMC5883L_MODE_SINGLE << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1));
+    *x = (((int16_t)buffer[0]) << 8) | buffer[1];
+    *y = (((int16_t)buffer[4]) << 8) | buffer[5];
+    *z = (((int16_t)buffer[2]) << 8) | buffer[3];
+}
+/** Get X-axis heading measurement.
+ * @return 16-bit signed integer with X-axis heading
+ * @see HMC5883L_RA_DATAX_H
+ */
+int16_t HMC5883L_getHeadingX() {
+    // each axis read requires that ALL axis registers be read, even if only
+    // one is used; this was not done ineffiently in the code by accident
+    I2Cdev_readBytes(devAddr, HMC5883L_RA_DATAX_H, 6, buffer, 0);
+    if (mode == HMC5883L_MODE_SINGLE) I2Cdev_writeByte(devAddr, HMC5883L_RA_MODE, HMC5883L_MODE_SINGLE << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1));
+    return (((int16_t)buffer[0]) << 8) | buffer[1];
+}
+/** Get Y-axis heading measurement.
+ * @return 16-bit signed integer with Y-axis heading
+ * @see HMC5883L_RA_DATAY_H
+ */
+int16_t HMC5883L_getHeadingY() {
+    // each axis read requires that ALL axis registers be read, even if only
+    // one is used; this was not done ineffiently in the code by accident
+    I2Cdev_readBytes(devAddr, HMC5883L_RA_DATAX_H, 6, buffer, 0);
+    if (mode == HMC5883L_MODE_SINGLE) I2Cdev_writeByte(devAddr, HMC5883L_RA_MODE, HMC5883L_MODE_SINGLE << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1));
+    return (((int16_t)buffer[4]) << 8) | buffer[5];
+}
+/** Get Z-axis heading measurement.
+ * @return 16-bit signed integer with Z-axis heading
+ * @see HMC5883L_RA_DATAZ_H
+ */
+int16_t HMC5883L_getHeadingZ() {
+    // each axis read requires that ALL axis registers be read, even if only
+    // one is used; this was not done ineffiently in the code by accident
+    I2Cdev_readBytes(devAddr, HMC5883L_RA_DATAX_H, 6, buffer, 0);
+    if (mode == HMC5883L_MODE_SINGLE) I2Cdev_writeByte(devAddr, HMC5883L_RA_MODE, HMC5883L_MODE_SINGLE << (HMC5883L_MODEREG_BIT - HMC5883L_MODEREG_LENGTH + 1));
+    return (((int16_t)buffer[2]) << 8) | buffer[3];
 }
 
 // STATUS register
@@ -323,14 +312,9 @@ void HMC5883L_GetHeading(HMC5883L_t *hmc5883l, int *x_heading, int *y_heading, i
  * @see HMC5883L_RA_STATUS
  * @see HMC5883L_STATUS_LOCK_BIT
  */
-bool HMC5883L_GetLockStatus(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBit(hmc5883l, HMC5883L_RA_STATUS, HMC5883L_STATUS_LOCK_BIT, &tmp);
-    if(tmp == 0x01)
-      return true;
-    else
-      return false;
+bool HMC5883L_getLockStatus() {
+    I2Cdev_readBit(devAddr, HMC5883L_RA_STATUS, HMC5883L_STATUS_LOCK_BIT, buffer, 0);
+    return buffer[0];
 }
 /** Get data ready status.
  * This bit is set when data is written to all six data registers, and cleared
@@ -342,141 +326,31 @@ bool HMC5883L_GetLockStatus(HMC5883L_t *hmc5883l)
  * @see HMC5883L_RA_STATUS
  * @see HMC5883L_STATUS_READY_BIT
  */
-bool HMC5883L_GetReadyStatus(HMC5883L_t *hmc5883l)
-{
-    uint8_t tmp;
-    HMC5883L_ReadBit(hmc5883l, HMC5883L_RA_STATUS, HMC5883L_STATUS_READY_BIT, &tmp);
-    if(tmp == 0x01)
-      return true;
-    else
-      return false;
+bool HMC5883L_getReadyStatus() {
+    I2Cdev_readBit(devAddr, HMC5883L_RA_STATUS, HMC5883L_STATUS_READY_BIT, buffer, 0);
+    return buffer[0];
 }
 
-/** Write multiple bits in an 8-bit device register.
- * @param slaveAddr I2C slave device address
- * @param regAddr Register regAddr to write to
- * @param bitStart First bit position to write (0-7)
- * @param length Number of bits to write (not more than 8)
- * @param data Right-aligned value to write
+// ID_* registers
+
+/** Get identification byte A
+ * @return ID_A byte (should be 01001000, ASCII value 'H')
  */
-void HMC5883L_WriteBits(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t data)
-{
-    uint8_t tmp;
-    HMC5883L_I2C_BufferRead(hmc5883l, &tmp, regAddr, 1);
-    uint8_t mask = ((1 << length) - 1) << (bitStart - length + 1);
-    data <<= (bitStart - length + 1); // shift data into correct position
-    data &= mask; // zero all non-important bits in data
-    tmp &= ~(mask); // zero all important bits in existing byte
-    tmp |= data; // combine data with existing byte
-    HMC5883L_I2C_ByteWrite(hmc5883l, &tmp, regAddr);
+uint8_t HMC5883L_getIDA() {
+    I2Cdev_readByte(devAddr, HMC5883L_RA_ID_A, buffer, 0);
+    return buffer[0];
 }
-/** write a single bit in an 8-bit device register.
- * @param slaveAddr I2C slave device address
- * @param regAddr Register regAddr to write to
- * @param bitNum Bit position to write (0-7)
- * @param value New bit value to write
+/** Get identification byte B
+ * @return ID_A byte (should be 00110100, ASCII value '4')
  */
-void HMC5883L_WriteBit(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitNum, uint8_t data)
-{
-    uint8_t tmp;
-    HMC5883L_I2C_BufferRead(hmc5883l, &tmp, regAddr, 1);
-    tmp = (data != 0) ? (tmp | (1 << bitNum)) : (tmp & ~(1 << bitNum));
-    HMC5883L_I2C_ByteWrite(hmc5883l, &tmp, regAddr);
+uint8_t HMC5883L_getIDB() {
+    I2Cdev_readByte(devAddr, HMC5883L_RA_ID_B, buffer, 0);
+    return buffer[0];
 }
-/** Read multiple bits from an 8-bit device register.
- * @param slaveAddr I2C slave device address
- * @param regAddr Register regAddr to read from
- * @param bitStart First bit position to read (0-7)
- * @param length Number of bits to read (not more than 8)
- * @param data Container for right-aligned value (i.e. '101' read from any bitStart position will equal 0x05)
- * @param timeout Optional read timeout in milliseconds (0 to disable, leave off to use default class value in readTimeout)
+/** Get identification byte C
+ * @return ID_A byte (should be 00110011, ASCII value '3')
  */
-void HMC5883L_ReadBits(HMC5883L_t *hmc5883l, uint8_t regAddr, uint8_t bitStart, uint8_t length, uint8_t *data)
-{
-    uint8_t tmp;
-    HMC5883L_I2C_BufferRead(hmc5883l, &tmp, regAddr, 1);
-    uint8_t mask = ((1 << length) - 1) << (bitStart - length + 1);
-    tmp &= mask;
-    tmp >>= (bitStart - length + 1);
-    *data = tmp;
+uint8_t HMC5883L_getIDC() {
+    I2Cdev_readByte(devAddr, HMC5883L_RA_ID_C, buffer, 0);
+    return buffer[0];
 }
-/** Read a single bit from an 8-bit device register.
- * @param slaveAddr I2C slave device address
- * @param regAddr Register regAddr to read from
- * @param bitNum Bit position to read (0-7)
- * @param data Container for single bit value
- * @param timeout Optional read timeout in milliseconds (0 to disable, leave off to use default class value in readTimeout)
- */
-void HMC5883L_ReadBit(HMC5883L_t* hmc5883l, uint8_t regAddr, uint8_t bitNum, uint8_t *data)
-{
-    uint8_t tmp;
-    HMC5883L_I2C_BufferRead(hmc5883l, &tmp, regAddr, 1);
-    *data = tmp & (1 << bitNum);
-}
-/**
-* @brief  Writes one byte to the  HMC5883L.
-* @param  slaveAddr : slave address HMC5883L_DEFAULT_ADDRESS
-* @param  pBuffer : pointer to the buffer  containing the data to be written to the HMC5883L.
-* @param  WriteAddr : address of the register in which the data will be written
-* @retval None
-*/
-void HMC5883L_I2C_ByteWrite(HMC5883L_t *hmc5883l, uint8_t* pBuffer, uint8_t WriteAddr)
-{
-//  ENTR_CRT_SECTION();
-
-  /* Send START condition */
-  //I2C_GenerateSTART(HMC5883L_I2C, ENABLE);
-
-
-  /* Test on EV5 and clear it */
-  //while(!I2C_CheckEvent(HMC5883L_I2C, I2C_EVENT_MASTER_MODE_SELECT));
-
-  /* Send HMC5883 address for write */
-  //I2C_Send7bitAddress(HMC5883L_I2C, slaveAddr, I2C_Direction_Transmitter);
-  HAL_I2C_Mem_Write(hmc5883l->hi2c, hmc5883l->address, WriteAddr, 1, pBuffer, 1, 100);
-
-
-  /* Test on EV6 and clear it */
-  //while(!I2C_CheckEvent(HMC5883L_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED));
-
-  /* Send the HMC5883L internal address to write to */
-  //I2C_SendData(HMC5883L_I2C, WriteAddr);
-
-  /* Test on EV8 and clear it */
-  //while(!I2C_CheckEvent(HMC5883L_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTED));
-
-  /* Send the byte to be written */
-  //I2C_SendData(HMC5883L_I2C, *pBuffer);
-
-  /* Test on EV8 and clear it */
-  //while(!I2C_CheckEvent(HMC5883L_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTED));
-
-  /* Send STOP condition */
-  //I2C_GenerateSTOP(HMC5883L_I2C, ENABLE);
- // EXT_CRT_SECTION();
-
-}
-
-/**
-* @brief  Reads a block of data from the HMC5883L.
-* @param  slaveAddr  : slave address HMC5883L_DEFAULT_ADDRESS
-* @param  pBuffer : pointer to the buffer that receives the data read from the HMC5883L.
-* @param  ReadAddr : HMC5883L's internal address to read from.
-* @param  NumByteToRead : number of bytes to read from the HMC5883L ( NumByteToRead >1  only for the Magnetometer reading).
-* @retval None
-*/
-
-void HMC5883L_I2C_BufferRead(HMC5883L_t *hmc5883l, uint8_t* pBuffer, uint8_t ReadAddr, uint16_t NumByteToRead)
-{
- // ENTR_CRT_SECTION();
-
-  /* While the bus is busy */
-  while(HAL_I2C_GetState(hmc5883l->hi2c) == HAL_I2C_STATE_BUSY);
-
-  /* Send START condition */
-  HAL_I2C_Mem_Read(hmc5883l->hi2c, hmc5883l->address, ReadAddr, 1, pBuffer, NumByteToRead, 100);
-}
-
-/**
- * @}
- */ /* end of group HMC5883L_Library */

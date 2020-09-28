@@ -42,22 +42,24 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-
+//const float yawMax = 30.0f;
+//const float pitchMax = 30.0f;
+//const float rollMax = 30.0f;
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 typedef struct{
-	char *GNGLL;
-	char *GNRMC;
-	char *GNGGA;
-}GPS_STRING;
-
-typedef struct{
 	float YAW;
 	float PITCH;
 	float ROLL;
 }IMU_DATA;
+
+typedef enum {
+	FLY_MODE_OFF,
+	FLY_MODE_ON,
+	FLY_MODE_HOLD
+} FLY_MODE;
 
 typedef struct{
 	TIM_HandleTypeDef *htim;
@@ -69,6 +71,35 @@ typedef struct{
 	bool onRisingEdge;
 	bool onFallingEdge;
 }PWM_DATA;
+
+typedef struct {
+	float error;
+	float preverror;
+
+	float derivative;
+	float sumIntegral;
+	float setPoint;
+
+	float output;
+
+	float kp;
+	float kd;
+	float ki;
+
+	float timesampling;
+} PIDType_t;
+
+typedef struct
+{
+    volatile uint8_t flag;     /* Timeout event flag */
+    uint16_t timer;             /* Timeout duration in msec */
+    uint16_t prevCNDTR;         /* Holds previous value of DMA_CNDTR */
+} DMA_Event_t;
+
+PIDType_t PIDYaw, PIDRoll, PIDPitch;
+
+volatile float sensorYaw, sensorPitch, sensorRoll;
+volatile int inputYaw, inputPitch, inputRoll, inputThrottle, inputFlyMode;
 /* USER CODE END EM */
 
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
@@ -82,7 +113,10 @@ void Error_Handler(void);
 
 /* Private defines -----------------------------------------------------------*/
 /* USER CODE BEGIN Private defines */
-
+#define GPS_BUF_SIZE 500
+#define DMA_TIMEOUT_MS 10
+#define map(x,in_min,in_max,out_min,out_max) ( (x-in_min) * (out_max-out_min) / (in_max-in_min) + out_min )
+#define constrain(nilaix,bawah,atas) ( (nilaix)<(bawah) ? (bawah) : ( (nilaix)>(atas) ? (atas) : (nilaix) ) )
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

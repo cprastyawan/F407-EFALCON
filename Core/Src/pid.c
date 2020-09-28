@@ -6,14 +6,18 @@
  */
 
 #include "pid.h"
-#include "GlobalVariables.h"
 
-void PIDControl(PIDType_t *pidtype, float input, float setPoint){
-	pidtype->setPoint = setPoint;
-	pidtype->error = pidtype->setPoint - input;
+extern TIM_HandleTypeDef htim2;
+
+void PIDControl(PIDType_t *pidtype, float dataSensor, float setPoint){
+	pidtype->setPoint = constrain(setPoint, -30, 30);
+	pidtype->error = pidtype->setPoint - dataSensor;
+
+	if(pidtype->error >= 180) pidtype->error -= 360;
+	else if(pidtype->error < -180) pidtype->error += 360;
 
 	pidtype->sumIntegral += pidtype->error * pidtype->timesampling;
-	pidtype->sumIntegral = constrain(pidtype->sumIntegral, -2000, 2000);
+	pidtype->sumIntegral = constrain(pidtype->sumIntegral, -500, 500);
 
 	pidtype->derivative = (pidtype->error - pidtype->preverror) / pidtype->timesampling;
 	pidtype->preverror = pidtype->error;
@@ -21,18 +25,23 @@ void PIDControl(PIDType_t *pidtype, float input, float setPoint){
 	pidtype->output = (pidtype->kp * pidtype->error) + (pidtype->kd * pidtype->derivative) + (pidtype->ki * pidtype->sumIntegral);
 }
 
-void PIDControlYAW(PIDType_t *pidtype){
+/*void PIDControlYAW(PIDType_t *pidtype, float dataYaw){
 
 }
-void PIDControlROLL(PIDType_t *pidtype){
+void PIDControlROLL(PIDType_t *pidtype, float dataRoll){
 
 }
-void PIDControlPITCH(PIDType_t *pidtype){
+void PIDControlPITCH(PIDType_t *pidtype, float dataPitch){
 
-}
+}*/
 void PIDReset(PIDType_t *pidtype){
 	pidtype->sumIntegral = 0;
 	pidtype->output = 0;
+
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,1000);
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_2,1000);
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,1000);
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_4,1000);
 }
 void PIDInit(PIDType_t *pidtype, double kp, double ki, double kd, double timesampling){
 	pidtype->kp = kp;
@@ -42,5 +51,66 @@ void PIDInit(PIDType_t *pidtype, double kp, double ki, double kd, double timesam
 	pidtype->timesampling = timesampling;
 }
 void trustControl(){
+	/*
+	  		CW 2\     /1 CCW
+				 \   /
+				  \ /
+				  / \
+	           	 /   \
+		   CCW 3/     \4 CW
+		       QuadCopter
+			   Motor 1000 KV
+			   Propeller : 11 x 4.7
+			   MaX thrust = 102.449448 N
+			   Thrust for each motor = 25.6123619
+		Formula :
+		F = 1.225 * ((3.14(0.0254 * d)^2)/4) *(RPM*0.0254*pitch*1/60)^2 * (d/(3.29546*pitch))^1.5;
+		F = 0.0750686 * 570.063376 * 0.598505539
+	*/
+
+	float motor1Thrust,motor2Thrust,motor3Thrust,motor4Thrust;
+	float motor1Torque,motor2Torque,motor3Torque,motor4Torque;
+	float thrust;
+	int pulseESC1,pulseESC2,pulseESC3,pulseESC4;
+	int RPMmotor1,RPMmotor2,RPMmotor3,RPMmotor4;
+
+	const float RADS = 57.29577795;
+	const float angleMotor1 = 45;
+	const float angleMotor2 = 135;
+	const float angleMotor3 = 225;
+	const float angleMotor4 = 315;
+	const float L = 0.225;
+
+	thrust = map(inputThrottle, 1000, 2000, 0, 102.449448);
+
+	motor1Torque = (thrust/4 + PIDPitch.output * sin(angleMotor1/RADS) + PIDRoll.output * cos(angleMotor1 / RADS) - PIDYaw.output) * L;
+	motor2Torque = (thrust/4 + PIDPitch.output * sin(angleMotor2/RADS) + PIDRoll.output * cos(angleMotor2 / RADS) + PIDYaw.output) * L;
+	motor3Torque = (thrust/4 + PIDPitch.output * sin(angleMotor3/RADS) + PIDRoll.output * cos(angleMotor3 / RADS) - PIDYaw.output) * L;
+	motor4Torque = (thrust/4 + PIDPitch.output * sin(angleMotor4/RADS) + PIDRoll.output * cos(angleMotor4 / RADS) + PIDYaw.output) * L;
+
+	motor1Thrust = motor1Torque/L;
+	motor2Thrust = motor2Torque/L;
+	motor3Thrust = motor3Torque/L;
+	motor4Thrust = motor4Torque/L;
+
+	RPMmotor1 = sqrt(motor1Thrust/ 0.0449289729)/0.0019896667;
+	RPMmotor2 = sqrt(motor2Thrust/ 0.0449289729)/0.0019896667;
+	RPMmotor3 = sqrt(motor3Thrust/ 0.0449289729)/0.0019896667;
+	RPMmotor4 = sqrt(motor4Thrust/ 0.0449289729)/0.0019896667;
+
+	RPMmotor1 = constrain(RPMmotor1,0,12000);
+	RPMmotor2 = constrain(RPMmotor2,0,12000);
+	RPMmotor3 = constrain(RPMmotor3,0,12000);
+	RPMmotor4 = constrain(RPMmotor4,0,12000);
+
+	pulseESC1 = map(RPMmotor1,0,12000,1000,2000);
+	pulseESC2 = map(RPMmotor2,0,12000,1000,2000);
+	pulseESC3 = map(RPMmotor3,0,12000,1000,2000);
+	pulseESC4 = map(RPMmotor4,0,12000,1000,2000);
+
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,pulseESC1);
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_2,pulseESC2);
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,pulseESC3);
+	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_4,pulseESC4);
 
 }

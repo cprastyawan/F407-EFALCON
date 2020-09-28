@@ -1,5 +1,5 @@
 Core/Src/HMC5883L.o: ../Core/Src/HMC5883L.c ../Core/Inc/HMC5883L.h \
- ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h \
+ ../Core/Inc/I2Cdev.h ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h \
  ../Core/Inc/stm32f4xx_hal_conf.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h \
@@ -31,6 +31,8 @@ Core/Src/HMC5883L.o: ../Core/Src/HMC5883L.c ../Core/Inc/HMC5883L.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
 
 ../Core/Inc/HMC5883L.h:
+
+../Core/Inc/I2Cdev.h:
 
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 
