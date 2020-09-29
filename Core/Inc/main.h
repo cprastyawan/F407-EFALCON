@@ -99,7 +99,9 @@ typedef struct
 PIDType_t PIDYaw, PIDRoll, PIDPitch;
 
 volatile float sensorYaw, sensorPitch, sensorRoll;
-volatile int inputYaw, inputPitch, inputRoll, inputThrottle, inputFlyMode;
+volatile float inputYaw, inputPitch, inputRoll;
+volatile int inputThrottle, inputFlyMode;
+volatile int pulseESC1,pulseESC2,pulseESC3,pulseESC4;
 /* USER CODE END EM */
 
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
@@ -112,6 +114,9 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define RC_CH6_Pin GPIO_PIN_3
+#define RC_CH6_GPIO_Port GPIOD
+#define RC_CH6_EXTI_IRQn EXTI3_IRQn
 /* USER CODE BEGIN Private defines */
 #define GPS_BUF_SIZE 500
 #define DMA_TIMEOUT_MS 10

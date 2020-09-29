@@ -59,6 +59,7 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim9;
 
@@ -121,6 +122,7 @@ static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM9_Init(void);
 static void MX_TIM7_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 void ESCInit();
@@ -184,54 +186,73 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM9_Init();
   MX_TIM7_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-  //ESCInit();
-
-  //Inisialisasi PID
-  //ROLL
-  PIDInit(&PIDRoll, 1, 1, 1, 1); //kp = 1, kd = 1, ki = 1, timesampling = 1
-
-  //PITCH
-  PIDInit(&PIDPitch, 1, 1, 1, 1); //kp = 1, kd = 1, ki = 1, timesampling = 1
-
-  //YAW
-  PIDInit(&PIDYaw,1,1,1,1); //kp = 1, kd = 1, ki = 1, timesampling = 1
 
   /*PIDControl(&PIDRoll, (float)IMU_Data->ROLL, RC_CH2.DutyCycleVal);
   PIDControl(&PIDPitch, (float)IMU_Data->PITCH, RC_CH1.DutyCycleVal);
   PIDControl(&PIDYaw, (float)IMU_Data->YAW, RC_CH4.DutyCycleVal);*/
 
   //init sensor
-  IMUInit();
+
   CompassInit();
   BMPInit();
   GPSInit();
+  IMUInit();
 
   //Remote init
   RemoteInit();
 
+  //Inisialisasi PID
+  //ROLL
+  PIDInit(&PIDRoll, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.01
+
+  //PITCH
+  PIDInit(&PIDPitch, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.01
+
+  //YAW
+  PIDInit(&PIDYaw, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.01
+
   strSize = sprintf((char*)buffer, "Mulai\r\n");
   HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+  ESCInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-	  if(inputFlyMode >= 900 && inputFlyMode <= 1100 && fly_mode != FLY_MODE_OFF){
+	  if(inputFlyMode >= 1000 && inputFlyMode <= 1050 && fly_mode != FLY_MODE_OFF){
 		  HAL_TIM_Base_Stop_IT(&htim7);
 		  fly_mode = FLY_MODE_OFF;
-		  strSize = sprintf((char*)buffer, "Wahana Mode Off");
+		  PIDReset(&PIDRoll);
+		  PIDReset(&PIDPitch);
+		  PIDReset(&PIDYaw);
+		  pulseESC1 = pulseESC2 = pulseESC3 = pulseESC4 = 1000;
+		  strSize = sprintf((char*)buffer, "Wahana Mode Off\r\n");
 		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
-	  } else if(inputFlyMode >= 1400 && inputFlyMode <= 1600 && fly_mode != FLY_MODE_ON){
+	  } else if(inputFlyMode >= 1450 && inputFlyMode <= 1550 && fly_mode != FLY_MODE_ON){
 		  fly_mode = FLY_MODE_ON;
-		  HAL_TIM_Base_Start_IT(&htim7);
-		  strSize = sprintf((char*)buffer, "Wahana Mode On");
+		  strSize = sprintf((char*)buffer, "Wahana Mode On\r\n");
 		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
-	  } else if(inputFlyMode >= 1900 && inputFlyMode <= 2100 && fly_mode != FLY_MODE_HOLD){
+		  HAL_TIM_Base_Start_IT(&htim7);
+	  } else if(inputFlyMode >= 1900 && inputFlyMode <= 2000 && fly_mode != FLY_MODE_HOLD){
 		  fly_mode = FLY_MODE_HOLD;
-		  strSize = sprintf((char*)buffer, "Wahana Mode Hold");
+		  strSize = sprintf((char*)buffer, "Wahana Mode Hold\r\n");
 		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 	  }
+
+	  //strSize = sprintf((char*)buffer, "ESC1: %d\tESC2: %d\tESC3: %d\tESC4: %d\r\n", pulseESC1, pulseESC2, pulseESC3, pulseESC4);
+	  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+	  //strSize = sprintf((char*)buffer, "YAW: %.2f\tPitch: %.2f\tRoll: %.2f\tThrottle: %d\r\n", inputYaw, inputPitch, inputRoll, inputThrottle);
+	  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+	  //strSize = sprintf((char*)buffer, "YAW: %f\tPITCH: %f\tROLL: %f\r\n", sensorYaw, sensorPitch, sensorRoll);
+	  //HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+
+	  strSize = sprintf((char*)buffer, "CH1: %lu, CH2: %lu, CH3: %lu, CH4: %lu, CH5: %lu, CH6: %lu\r\n",
+			  RC_CH1.DutyCycleVal, RC_CH2.DutyCycleVal, RC_CH3.DutyCycleVal, RC_CH4.DutyCycleVal, RC_CH5.DutyCycleVal, RC_CH6.DutyCycleVal);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 
 	  getIMUData(&IMU_Data);
     /* USER CODE END WHILE */
@@ -276,8 +297,8 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV8;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV8;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
@@ -373,9 +394,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 168 - 1;
+  htim1.Init.Prescaler = 42 - 1;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 0xFFFF - 1;
+  htim1.Init.Period = 0xFFFF;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -432,7 +453,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 168 - 1;
+  htim2.Init.Prescaler = 42 - 1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 20000 - 1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -503,9 +524,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 168 - 1;
+  htim3.Init.Prescaler = 42 - 1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 0xFFFF - 1;
+  htim3.Init.Period = 0xFFFF;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -565,9 +586,9 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 168 - 1;
+  htim4.Init.Prescaler = 42 - 1;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 0xFFFF - 1;
+  htim4.Init.Period = 0xFFFF;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -627,9 +648,9 @@ static void MX_TIM5_Init(void)
 
   /* USER CODE END TIM5_Init 1 */
   htim5.Instance = TIM5;
-  htim5.Init.Prescaler = 168 - 1;
+  htim5.Init.Prescaler = 42 - 1;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 0xFFFF - 1;
+  htim5.Init.Period = 0xFFFF;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
@@ -666,6 +687,44 @@ static void MX_TIM5_Init(void)
 }
 
 /**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 42 - 1;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 0xFFFF;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
   * @brief TIM7 Initialization Function
   * @param None
   * @retval None
@@ -683,7 +742,7 @@ static void MX_TIM7_Init(void)
 
   /* USER CODE END TIM7_Init 1 */
   htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 168 - 1;
+  htim7.Init.Prescaler = 42 - 1;
   htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim7.Init.Period = 10000 - 1;
   htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -722,7 +781,7 @@ static void MX_TIM9_Init(void)
 
   /* USER CODE END TIM9_Init 1 */
   htim9.Instance = TIM9;
-  htim9.Init.Prescaler = 168 - 1;
+  htim9.Init.Prescaler = 42 - 1;
   htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim9.Init.Period = 0xFFFF;
   htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -879,6 +938,7 @@ static void MX_DMA_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
@@ -887,6 +947,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin : RC_CH6_Pin */
+  GPIO_InitStruct.Pin = RC_CH6_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(RC_CH6_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
 
 }
 
@@ -985,7 +1055,7 @@ void CompassInit(){
 
 void RemoteInit(){
 	  fly_mode = FLY_MODE_OFF;
-	  strSize = sprintf((char*)buffer, "Wahana Mode Off");
+	  strSize = sprintf((char*)buffer, "Wahana Mode Off\r\n");
 	  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 
 	  initPWM_DATA(&RC_CH1, &htim3, TIM_CHANNEL_2);
@@ -993,15 +1063,17 @@ void RemoteInit(){
 	  initPWM_DATA(&RC_CH3, &htim5, TIM_CHANNEL_1);
 	  initPWM_DATA(&RC_CH4, &htim3, TIM_CHANNEL_1);
 	  initPWM_DATA(&RC_CH5, &htim4, TIM_CHANNEL_1);
+	  initPWM_DATA(&RC_CH6, &htim6, 0);
+
 	  HAL_TIM_IC_Start_IT(RC_CH1.htim, RC_CH1.channel);
 	  HAL_TIM_IC_Start_IT(RC_CH2.htim, RC_CH2.channel);
 	  HAL_TIM_IC_Start_IT(RC_CH3.htim, RC_CH3.channel);
 	  HAL_TIM_IC_Start_IT(RC_CH4.htim, RC_CH4.channel);
 	  HAL_TIM_IC_Start_IT(RC_CH5.htim, RC_CH5.channel);
+	  HAL_TIM_Base_Start(RC_CH6.htim);
 }
 
 void IMUInit(){
-	  HAL_Delay(3000);
 	  HAL_UART_Transmit(&huart2, (u_char*)0xA5, 1, 10);
 	  HAL_UART_Transmit(&huart2, (u_char*)0x54, 1, 10);
 
@@ -1158,7 +1230,7 @@ void setPWM_DATA(PWM_DATA* pwm_data){
 		pwm_data->FallingEdgeVal = HAL_TIM_ReadCapturedValue(pwm_data->htim, pwm_data->channel);
 		__HAL_TIM_SET_CAPTUREPOLARITY(pwm_data->htim, pwm_data->channel, TIM_INPUTCHANNELPOLARITY_RISING);
 	}
-	if(pwm_data->FallingEdgeVal > pwm_data->RisingEdgeVal){
+	if(pwm_data->FallingEdgeVal >= pwm_data->RisingEdgeVal){
 		pwm_data->DutyCycleVal = pwm_data->FallingEdgeVal - pwm_data->RisingEdgeVal;
 		pwm_data->FallingEdgeVal = 0;
 		pwm_data->RisingEdgeVal = 0;
@@ -1211,12 +1283,34 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 	}
 	else if(htim == RC_CH3.htim) {
 		setPWM_DATA(&RC_CH3);
-		inputThrottle = constrain(RC_CH3.DutyCycleVal, 1000, 2000);
+		if(RC_CH3.DutyCycleVal >= 1150){
+			inputThrottle = constrain(RC_CH3.DutyCycleVal, 1000, 2000);
+		} else {
+			RC_CH3.DutyCycleVal = 1000;
+			inputThrottle = 1000;
+		}
 	}
 	else if(htim == RC_CH5.htim) {
 		setPWM_DATA(&RC_CH5);
 		inputFlyMode = constrain(RC_CH5.DutyCycleVal, 1000, 2000);
+	}
+}
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	if(RC_CH6.onRisingEdge && !RC_CH6.onFallingEdge){
+		RC_CH6.onRisingEdge = false;
+		RC_CH6.onFallingEdge = true;
+		RC_CH6.RisingEdgeVal = __HAL_TIM_GET_COUNTER(RC_CH6.htim);
+
+	} else if(RC_CH6.onFallingEdge && !RC_CH6.onRisingEdge) {
+		RC_CH6.onFallingEdge = false;
+		RC_CH6.onRisingEdge =  true;
+		RC_CH6.FallingEdgeVal = __HAL_TIM_GET_COUNTER(RC_CH6.htim);
+	}
+	if(RC_CH6.FallingEdgeVal >= RC_CH6.RisingEdgeVal){
+		RC_CH6.DutyCycleVal = RC_CH6.FallingEdgeVal - RC_CH6.RisingEdgeVal;
+		RC_CH6.FallingEdgeVal = 0;
+		RC_CH6.RisingEdgeVal = 0;
 	}
 }
 /* USER CODE END 4 */

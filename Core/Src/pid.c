@@ -44,6 +44,8 @@ void PIDReset(PIDType_t *pidtype){
 	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_4,1000);
 }
 void PIDInit(PIDType_t *pidtype, double kp, double ki, double kd, double timesampling){
+	PIDReset(pidtype);
+
 	pidtype->kp = kp;
 	pidtype->kd = kd;
 	pidtype->ki = ki;
@@ -71,7 +73,6 @@ void trustControl(){
 	float motor1Thrust,motor2Thrust,motor3Thrust,motor4Thrust;
 	float motor1Torque,motor2Torque,motor3Torque,motor4Torque;
 	float thrust;
-	int pulseESC1,pulseESC2,pulseESC3,pulseESC4;
 	int RPMmotor1,RPMmotor2,RPMmotor3,RPMmotor4;
 
 	const float RADS = 57.29577795;
