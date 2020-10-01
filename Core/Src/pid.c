@@ -62,7 +62,7 @@ void trustControl(){
 		   CCW 3/     \4 CW
 		       QuadCopter
 			   Motor 1000 KV
-			   Propeller : 11 x 4.7
+			   Propeller : 9 x 4.5
 			   MaX thrust = 102.449448 N
 			   Thrust for each motor = 25.6123619
 		Formula :
@@ -82,7 +82,7 @@ void trustControl(){
 	const float angleMotor4 = 315;
 	const float L = 0.225;
 
-	thrust = map(inputThrottle, 1000, 2000, 0, 102.449448);
+	thrust = map(inputThrottle, 1000, 2000, 0, 49.663985);
 
 	motor1Torque = (thrust/4 + PIDPitch.output * sin(angleMotor1/RADS) + PIDRoll.output * cos(angleMotor1 / RADS) - PIDYaw.output) * L;
 	motor2Torque = (thrust/4 + PIDPitch.output * sin(angleMotor2/RADS) + PIDRoll.output * cos(angleMotor2 / RADS) + PIDYaw.output) * L;

@@ -54,7 +54,6 @@
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c3;
 
-TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
@@ -62,6 +61,7 @@ TIM_HandleTypeDef htim5;
 TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim9;
+TIM_HandleTypeDef htim10;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -116,13 +116,13 @@ static void MX_USART3_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_I2C3_Init(void);
-static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM9_Init(void);
 static void MX_TIM7_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 
 void ESCInit();
@@ -180,13 +180,13 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM3_Init();
   MX_I2C3_Init();
-  MX_TIM1_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
   MX_TIM5_Init();
   MX_TIM9_Init();
   MX_TIM7_Init();
   MX_TIM6_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
 
   /*PIDControl(&PIDRoll, (float)IMU_Data->ROLL, RC_CH2.DutyCycleVal);
@@ -205,17 +205,20 @@ int main(void)
 
   //Inisialisasi PID
   //ROLL
-  PIDInit(&PIDRoll, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.01
+  PIDInit(&PIDRoll, 1.5f, 0.0f, 3.5f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
 
   //PITCH
-  PIDInit(&PIDPitch, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.01
+  PIDInit(&PIDPitch, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
 
   //YAW
-  PIDInit(&PIDYaw, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.01
+  PIDInit(&PIDYaw, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
+
+  ESCInit();
+
+  HAL_TIM_Base_Start_IT(&htim10);
 
   strSize = sprintf((char*)buffer, "Mulai\r\n");
   HAL_UART_Transmit(&huart1, buffer, strSize, 10);
-  ESCInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -249,10 +252,6 @@ int main(void)
 
 	  //strSize = sprintf((char*)buffer, "YAW: %f\tPITCH: %f\tROLL: %f\r\n", sensorYaw, sensorPitch, sensorRoll);
 	  //HAL_UART_Transmit(&huart1, buffer, strSize, 10);
-
-	  strSize = sprintf((char*)buffer, "CH1: %lu, CH2: %lu, CH3: %lu, CH4: %lu, CH5: %lu, CH6: %lu\r\n",
-			  RC_CH1.DutyCycleVal, RC_CH2.DutyCycleVal, RC_CH3.DutyCycleVal, RC_CH4.DutyCycleVal, RC_CH5.DutyCycleVal, RC_CH6.DutyCycleVal);
-	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 
 	  getIMUData(&IMU_Data);
     /* USER CODE END WHILE */
@@ -371,65 +370,6 @@ static void MX_I2C3_Init(void)
   /* USER CODE BEGIN I2C3_Init 2 */
 
   /* USER CODE END I2C3_Init 2 */
-
-}
-
-/**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM1_Init(void)
-{
-
-  /* USER CODE BEGIN TIM1_Init 0 */
-
-  /* USER CODE END TIM1_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM1_Init 1 */
-
-  /* USER CODE END TIM1_Init 1 */
-  htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 42 - 1;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 0xFFFF;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM1_Init 2 */
-
-  /* USER CODE END TIM1_Init 2 */
 
 }
 
@@ -618,10 +558,6 @@ static void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_IC_ConfigChannel(&htim4, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN TIM4_Init 2 */
 
   /* USER CODE END TIM4_Init 2 */
@@ -742,9 +678,9 @@ static void MX_TIM7_Init(void)
 
   /* USER CODE END TIM7_Init 1 */
   htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 42 - 1;
+  htim7.Init.Prescaler = 42000 - 1;
   htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 10000 - 1;
+  htim7.Init.Period = 10;
   htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
   {
@@ -810,6 +746,37 @@ static void MX_TIM9_Init(void)
   /* USER CODE BEGIN TIM9_Init 2 */
 
   /* USER CODE END TIM9_Init 2 */
+
+}
+
+/**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 42000 - 1;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 100 - 1;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
 
 }
 
@@ -1261,6 +1228,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		PIDControl(&PIDPitch, sensorPitch, inputPitch);
 		PIDControl(&PIDYaw, sensorYaw, inputYaw);
 		trustControl();
+
+	}else if(htim->Instance == TIM10){
+		  strSize = sprintf((char*)buffer, "YAW: %f\tPitch: %f\tRoll: %f\tThrottle: %d\r\n", inputYaw, inputPitch, inputRoll, inputThrottle);
+		  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+		  //strSize = sprintf((char*)buffer, "CH1: %lu, CH2: %lu, CH3: %lu, CH4: %lu, CH5: %lu, CH6: %lu\r\n",
+				 // RC_CH1.DutyCycleVal, RC_CH2.DutyCycleVal, RC_CH3.DutyCycleVal, RC_CH4.DutyCycleVal, RC_CH5.DutyCycleVal, RC_CH6.DutyCycleVal);
+		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+		  //strSize = sprintf((char*)buffer, "ESC1: %d\tESC2: %d\tESC3: %d\tESC4: %d\r\n", pulseESC1, pulseESC2, pulseESC3, pulseESC4);
+		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 	}
 }
 
