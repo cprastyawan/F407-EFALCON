@@ -205,8 +205,8 @@ int main(void)
 
   //Inisialisasi PID
   //ROLL
-  PIDInit(&PIDRoll, 1.5f, 0.0f, 3.5f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
-
+  //PIDInit(&PIDRoll, 0.47f, 0.0f, 1.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
+  PIDInit(&PIDRoll, 0.25, 0.1, 0.058, 0.01);
   //PITCH
   PIDInit(&PIDPitch, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
 
@@ -216,6 +216,7 @@ int main(void)
   ESCInit();
 
   HAL_TIM_Base_Start_IT(&htim10);
+
 
   strSize = sprintf((char*)buffer, "Mulai\r\n");
   HAL_UART_Transmit(&huart1, buffer, strSize, 10);
@@ -767,7 +768,7 @@ static void MX_TIM10_Init(void)
   htim10.Instance = TIM10;
   htim10.Init.Prescaler = 42000 - 1;
   htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim10.Init.Period = 100 - 1;
+  htim10.Init.Period = 15 - 1;
   htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
@@ -1230,13 +1231,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		trustControl();
 
 	}else if(htim->Instance == TIM10){
-		  strSize = sprintf((char*)buffer, "YAW: %f\tPitch: %f\tRoll: %f\tThrottle: %d\r\n", inputYaw, inputPitch, inputRoll, inputThrottle);
-		  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+		  //strSize = sprintf((char*)buffer, "YAW: %f\tPitch: %f\tRoll: %f\tThrottle: %d\r\n", inputYaw, inputPitch, inputRoll, inputThrottle);
+		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 		  //strSize = sprintf((char*)buffer, "CH1: %lu, CH2: %lu, CH3: %lu, CH4: %lu, CH5: %lu, CH6: %lu\r\n",
 				 // RC_CH1.DutyCycleVal, RC_CH2.DutyCycleVal, RC_CH3.DutyCycleVal, RC_CH4.DutyCycleVal, RC_CH5.DutyCycleVal, RC_CH6.DutyCycleVal);
 		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 		  //strSize = sprintf((char*)buffer, "ESC1: %d\tESC2: %d\tESC3: %d\tESC4: %d\r\n", pulseESC1, pulseESC2, pulseESC3, pulseESC4);
 		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+		strSize = sprintf((char*)buffer, "%f\r\n", sensorRoll);
+		HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 	}
 }
 

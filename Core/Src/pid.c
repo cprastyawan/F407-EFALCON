@@ -63,11 +63,11 @@ void trustControl(){
 		       QuadCopter
 			   Motor 1000 KV
 			   Propeller : 9 x 4.5
-			   MaX thrust = 102.449448 N
-			   Thrust for each motor = 25.6123619
+			   MaX thrust = 49.663985 N
+			   Thrust for each motor = 12.41599
 		Formula :
 		F = 1.225 * ((3.14(0.0254 * d)^2)/4) *(RPM*0.0254*pitch*1/60)^2 * (d/(3.29546*pitch))^1.5;
-		F = 0.0750686 * 570.063376 * 0.598505539
+		F = 0.050252560785 * 522.5796 * 0.47279287884410658042558653798071
 	*/
 
 	float motor1Thrust,motor2Thrust,motor3Thrust,motor4Thrust;
