@@ -1,0 +1,125 @@
+void kinematic(uint32_t *output, uint32_t input1, uint32_t input2, uint32_t input3, uint32_t input4){
+	static double Tr, Tp, Tz, Ty;
+	const double KT=1, KQ=1, L=0.23;
+
+	double w1, w2, w3, w4;
+
+	Tr = map((double)input1, 1000, 2000, -10, 10);
+	Tp = map((double)input2, 1000, 2000, 10, -10);
+	Tz = map((double)input3, 1000, 2000, 1000, 2000);
+	Ty = map((double)input4, 1000, 2000, -5, 5);
+
+
+	  if (Tz == 1000.0f && Tr == 0.0f && Tp == 0.0f && Ty == 0.0f) {
+			output[0] = 1000;
+			output[1] = 1000;
+			output[2] = 1000;
+			output[3] = 1000;
+	  }
+	  else {
+			//QUADCOPTER
+			w1 = Tz/(4*KT) + Tr/(2*KT*L) + Ty/(2*KQ);
+			w2 = Tz/(4*KT) + Tp/(2*KT*L) - Ty/(2*KQ);
+			w3 = Tz/(4*KT) - Tp/(2*KT*L) - Ty/(2*KQ);
+			w4 = Tz/(4*KT) - Tr/(2*KT*L) + Ty/(2*KQ);
+
+			output[0] = (uint32_t)map(w1, 250, 500, 1000, 2000);
+
+			output[1] = (uint32_t)map(w2, 250, 500, 1000, 2000);
+			output[2] = (uint32_t)map(w3, 250, 500, 1000, 2000);
+			output[3] = (uint32_t)map(w4, 250, 500, 1000, 2000);
+
+			output[0] = constrain(output[0], 1000, 2000);
+			output[1] = constrain(output[1], 1000, 2000);
+			output[2] = constrain(output[2], 1000, 2000);
+			output[3] = constrain(output[3], 1000, 2000);
+	  }
+}
+
+	  if(dutyCycle > ESC_PWM_MAX) dutyCycle = ESC_PWM_MIN;
+	  setPWM(htim3, TIM_CHANNEL_3, dutyCycle);
+	  dutyCycle = dutyCycle + 100;*/
+	  /*if(IMUDataStatus == 1){
+		  getIMUData(&IMU_Data);
+		  //strSize = sprintf(buffer, "YAW: %f, PITCH: %f, ROLL: %f\r\n", IMU_Data.YAW, IMU_Data.PITCH, IMU_Data.ROLL);
+		  strSize = sprintf(buffer, "%f\r\n", IMU_Data.YAW);
+		  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+		  IMUDataStatus = 0;
+	  }*/
+	  /*if(GPSDataStatus == 1){
+		  //int GPSBuffer_len = strlen(GPSBuffer);
+		  for(int i = 0; i < GPSBufferLength; i++){
+			  if(GPSBuffer[i] == '$') {
+				  char str[4] = {GPSBuffer[i+3], GPSBuffer[i+4], GPSBuffer[i+5], '\0'};
+				  if(strcmp("GGA", str) == 0){
+					  	int length = strchr(&GPSBuffer[i], '\n') - (unsigned)&GPSBuffer[i] + 1;
+					  	if(length <= 0) break;
+					  	GPS_String.GNGGA = (char*)malloc(length + 1);
+						memcpy(GPS_String.GNGGA, &GPSBuffer[i], length);
+						GPS_String.GNGGA[length] = '\0';
+						i = i + length;
+						HAL_UART_Transmit(&huart1, GPS_String.GNGGA, length, 100);
+				  }
+
+				  else if(strcmp("GLL", str) == 0){
+						int length = strchr(&GPSBuffer[i], '\n') - (unsigned)&GPSBuffer[i] + 1;
+					  	if(length <= 0) break;
+						GPS_String.GNGLL = (char*)malloc(length + 1);
+						memcpy(GPS_String.GNGLL, &GPSBuffer[i], length);
+						GPS_String.GNGLL[length] = '\0';
+						i = i + length;
+						HAL_UART_Transmit(&huart1, GPS_String.GNGLL, length, 100);
+				  }
+
+				  else if(strcmp("RMC", str) == 0){
+						int length = strchr(&GPSBuffer[i], '\n') - (unsigned)&GPSBuffer[i] + 1;
+					  	if(length <= 0) break;
+						GPS_String.GNRMC = (char*)malloc(length + 1);
+						memcpy(GPS_String.GNRMC, &GPSBuffer[i], length);
+						GPS_String.GNRMC[length] = '\0';
+						i = i + length;
+						HAL_UART_Transmit(&huart1, GPS_String.GNRMC, length, 100);
+				  } else continue;
+			  }  else continue;
+		  }
+		  //strSize = sprintf(buffer, "%s\r\n", GPSBuffer);
+		  GPSDataStatus = 0;
+		  memset(GPSBuffer, 0, GPSBufferLength);
+		  GPSBufferLength = 0;
+		  HAL_UART_Receive_DMA(&huart4, GPSBuffer, 800);
+	  }*/
+	  
+	 /* kinematic(w_output, RC_CH1.DutyCycleVal, RC_CH2.DutyCycleVal, RC_CH3.DutyCycleVal, RC_CH4.DutyCycleVal);
+
+	  strSize = sprintf((char*)buffer, "ESC1: %lu\r\n", w_output[0]);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+	  strSize = sprintf((char*)buffer, "ESC2: %lu\r\n", w_output[1]);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+	  strSize = sprintf((char*)buffer, "ESC3: %lu\r\n", w_output[2]);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+	  strSize = sprintf((char*)buffer, "ESC4: %lu\r\n", w_output[3]);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+
+	  HAL_UART_Transmit(&huart1, "\r\n", 2, 5);
+
+	  HAL_Delay(200);*/
+
+
+/*
+	  strSize = sprintf((char*)buffer, "RC CH1: %lu us\r\n", RC_CH1.DutyCycleVal);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  strSize = sprintf((char*)buffer, "RC CH2: %lu us\r\n", RC_CH2.DutyCycleVal);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  strSize = sprintf((char*)buffer, "RC CH3: %lu us\r\n", RC_CH3.DutyCycleVal);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  strSize = sprintf((char*)buffer, "RC CH4: %lu us\r\n", RC_CH4.DutyCycleVal);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+	  strSize = sprintf((char*)buffer, "RC CH5: %lu us\r\n", RC_CH5.DutyCycleVal);
+	  HAL_UART_Transmit(&huart1, buffer, strSize, 100);
+*/
+	  //setPWM(htim2, TIM_CHANNEL_4, RC_CH3.DutyCycleVal);
+
+	  //HAL_Delay(500);
