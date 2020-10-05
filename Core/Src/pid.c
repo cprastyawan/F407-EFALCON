@@ -84,20 +84,20 @@ void trustControl(){
 
 	thrust = map(inputThrottle, 1000, 2000, 0, 49.663985);
 
-	motor1Torque = (thrust/4 + PIDPitch.output * sin(angleMotor1/RADS) + PIDRoll.output * cos(angleMotor1 / RADS) - PIDYaw.output) * L;
-	motor2Torque = (thrust/4 + PIDPitch.output * sin(angleMotor2/RADS) + PIDRoll.output * cos(angleMotor2 / RADS) + PIDYaw.output) * L;
-	motor3Torque = (thrust/4 + PIDPitch.output * sin(angleMotor3/RADS) + PIDRoll.output * cos(angleMotor3 / RADS) - PIDYaw.output) * L;
-	motor4Torque = (thrust/4 + PIDPitch.output * sin(angleMotor4/RADS) + PIDRoll.output * cos(angleMotor4 / RADS) + PIDYaw.output) * L;
+	motor1Torque = (thrust/4 - PIDPitch.output * sin(angleMotor1/RADS) + PIDRoll.output * cos(angleMotor1 / RADS) - PIDYaw.output) * L;
+	motor2Torque = (thrust/4 - PIDPitch.output * sin(angleMotor2/RADS) + PIDRoll.output * cos(angleMotor2 / RADS) + PIDYaw.output) * L;
+	motor3Torque = (thrust/4 - PIDPitch.output * sin(angleMotor3/RADS) + PIDRoll.output * cos(angleMotor3 / RADS) - PIDYaw.output) * L;
+	motor4Torque = (thrust/4 - PIDPitch.output * sin(angleMotor4/RADS) + PIDRoll.output * cos(angleMotor4 / RADS) + PIDYaw.output) * L;
 
 	motor1Thrust = motor1Torque/L;
 	motor2Thrust = motor2Torque/L;
 	motor3Thrust = motor3Torque/L;
 	motor4Thrust = motor4Torque/L;
 
-	RPMmotor1 = sqrt(motor1Thrust/ 0.0449289729)/0.0019896667;
-	RPMmotor2 = sqrt(motor2Thrust/ 0.0449289729)/0.0019896667;
-	RPMmotor3 = sqrt(motor3Thrust/ 0.0449289729)/0.0019896667;
-	RPMmotor4 = sqrt(motor4Thrust/ 0.0449289729)/0.0019896667;
+	RPMmotor1 = sqrt(motor1Thrust / 0.023759052) / 0.001905;
+	RPMmotor2 = sqrt(motor2Thrust / 0.023759052) / 0.001905;
+	RPMmotor3 = sqrt(motor3Thrust / 0.023759052) / 0.001905;
+	RPMmotor4 = sqrt(motor4Thrust / 0.023759052) / 0.001905;
 
 	RPMmotor1 = constrain(RPMmotor1,0,12000);
 	RPMmotor2 = constrain(RPMmotor2,0,12000);
