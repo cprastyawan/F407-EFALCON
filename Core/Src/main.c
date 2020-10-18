@@ -82,7 +82,8 @@ float pressureRef = 0;
 bool bme280p;
 bool RisingEdge = 1, FallingEdge = 0;
 int16_t x_heading, y_heading, z_heading;
-float altitude;
+float sensorAltitude;
+float holdAltitude;
 char latitude[20];
 char longitude[20];
 
@@ -188,14 +189,9 @@ int main(void)
   MX_TIM6_Init();
   MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
-
-  /*PIDControl(&PIDRoll, (float)IMU_Data->ROLL, RC_CH2.DutyCycleVal);
-  PIDControl(&PIDPitch, (float)IMU_Data->PITCH, RC_CH1.DutyCycleVal);
-  PIDControl(&PIDYaw, (float)IMU_Data->YAW, RC_CH4.DutyCycleVal);*/
-
   //init sensor
 
-  CompassInit();
+  //CompassInit();
   BMPInit();
   GPSInit();
   IMUInit();
@@ -205,13 +201,14 @@ int main(void)
 
   //Inisialisasi PID
   //ROLL
-  //PIDInit(&PIDRoll, 0.47f, 0.0f, 1.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
-  PIDInit(&PIDRoll, 0.25, 0.1, 0.058, 0.01);
+  //KP, KI, KD
+  PIDInit(&PIDRoll, 0.0, 0.0, 0.0, 0.01);
   //PITCH
-  PIDInit(&PIDPitch, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
-
+  PIDInit(&PIDPitch, 0.0f, 0.0f, 0.0f, 0.01);
   //YAW
-  PIDInit(&PIDYaw, 0.0f, 0.0f, 0.0f, 0.01); //kp = 1, kd = 1, ki = 1, timesampling = 0.04
+  PIDInit(&PIDYaw, 0.0f, 0.0f, 0.0f, 0.01);
+  //ALTITUDE
+  PIDInit(&PIDAltitude, 0.0201f, 0.0035f, 0.00583f, 0.01);
 
   ESCInit();
 
@@ -225,6 +222,8 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
+	  getBMPAltitude();
+	  getIMUData(&IMU_Data);
 	  if(inputFlyMode >= 1000 && inputFlyMode <= 1050 && fly_mode != FLY_MODE_OFF){
 		  HAL_TIM_Base_Stop_IT(&htim7);
 		  fly_mode = FLY_MODE_OFF;
@@ -241,6 +240,8 @@ int main(void)
 		  HAL_TIM_Base_Start_IT(&htim7);
 	  } else if(inputFlyMode >= 1900 && inputFlyMode <= 2000 && fly_mode != FLY_MODE_HOLD){
 		  fly_mode = FLY_MODE_HOLD;
+		  holdAltitude = sensorAltitude;
+		  holdThrottle = inputThrottle;
 		  strSize = sprintf((char*)buffer, "Wahana Mode Hold\r\n");
 		  HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 	  }
@@ -254,7 +255,6 @@ int main(void)
 	  //strSize = sprintf((char*)buffer, "YAW: %f\tPITCH: %f\tROLL: %f\r\n", sensorYaw, sensorPitch, sensorRoll);
 	  //HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 
-	  getIMUData(&IMU_Data);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -961,7 +961,6 @@ void ESCInit(){
 }
 
 void BMPInit(){
-	kalman_init(&kalman_altitude, 0.1, 0.1, 0.03);
 	bmp280_init_default_params(&bmp280.params);
 	bmp280.addr = BMP280_I2C_ADDRESS_0;
 	bmp280.i2c = &hi2c1;
@@ -969,7 +968,7 @@ void BMPInit(){
 	while(!bmp280_init(&bmp280, &bmp280.params)){
 		strSize = sprintf((char*)buffer, "BMP280 initialization failed\r\n");
 		HAL_UART_Transmit(&huart1, buffer, strSize, 1000);
-		HAL_Delay(50);
+		HAL_Delay(75);
 	}
 	HAL_Delay(1000);
 	bme280p = bmp280.id == BME280_CHIP_ID;
@@ -986,13 +985,15 @@ void BMPInit(){
 		while(bmp280_is_measuring(&bmp280)) continue;
 		bmp280_read_float(&bmp280, &temperature, &pressure, &humidity);
 		HAL_UART_Transmit(&huart1, (uint8_t*)".", 1, 10);
-		pres_total = pres_total + pressure;
+		pres_total += pressure;
 	}
 
 	pressureRef = pres_total / 100;
+	HAL_Delay(20);
+	kalman_init(&kalman_altitude, 0.12, 0.12, 0.055);
 	strSize = sprintf((char*)buffer,"Done!\r\n");
 	HAL_UART_Transmit(&huart1, buffer, strSize, 10);
-	HAL_Delay(1000);
+	HAL_Delay(500);
 }
 
 void GPSInit(){
@@ -1082,14 +1083,16 @@ void IMUInit(){
 }
 
 void getBMPAltitude(){
+	static float altitude_reading;
+	static float estimated_altitude;
 	if(!bmp280_is_measuring(&bmp280)){
 		  float pressure, temperature, humidity;
 		  bmp280_read_float(&bmp280, &temperature, &pressure, &humidity);
-		  float altitude_reading = bmp280_read_altitude(pressure/100, pressureRef/100);
-		  float estimated_altitude = kalman_updateEstimate(&kalman_altitude, altitude_reading);
-		  altitude = estimated_altitude;
-		  //strSize = sprintf((char*)buffer, "%f\r\n", estimated_altitude);
-		  //HAL_UART_Transmit(&huart1, buffer, strSize, 1);
+		  altitude_reading = bmp280_read_altitude(pressure / 100, pressureRef / 100);
+		  estimated_altitude = kalman_updateEstimate(&kalman_altitude, altitude_reading);
+		  sensorAltitude = estimated_altitude;
+		  strSize = sprintf((char*)buffer, "%f\r\n", sensorAltitude);
+		  HAL_UART_Transmit(&huart1, buffer, strSize, 1);
 	}
 }
 
@@ -1207,12 +1210,6 @@ void setPWM_DATA(PWM_DATA* pwm_data){
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  /* Prevent unused argument(s) compilation warning */
-  UNUSED(huart);
-  /* NOTE: This function should not be modified, when the callback is needed,
-           the HAL_UART_RxCpltCallback could be implemented in the user file
-   */
-  //HAL_UART_Transmit(&huart3, RxBuffer, 8, 100);
   if(huart->Instance == USART2 && !IMUDataStatus)
 	  IMUDataStatus = true;
 
@@ -1224,11 +1221,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if(htim->Instance == TIM7 && (fly_mode == FLY_MODE_ON || fly_mode == FLY_MODE_HOLD)){
-		PIDRoll.timesampling = PIDYaw.timesampling = PIDPitch.timesampling = 0.01;
-		PIDControl(&PIDRoll, sensorRoll, inputRoll);
-		PIDControl(&PIDPitch, sensorPitch, inputPitch);
-		PIDControl(&PIDYaw, sensorYaw, inputYaw);
-		trustControl();
+		if(fly_mode == FLY_MODE_ON){
+			PIDRoll.timesampling = PIDYaw.timesampling = PIDPitch.timesampling = 0.01;
+			PIDControl(&PIDRoll, sensorRoll, inputRoll);
+			PIDControl(&PIDPitch, sensorPitch, inputPitch);
+			PIDControl(&PIDYaw, sensorYaw, inputYaw);
+			trustControl(fly_mode);
+		} else if(fly_mode == FLY_MODE_HOLD){
+			PIDRoll.timesampling = PIDYaw.timesampling = PIDPitch.timesampling = PIDAltitude.timesampling =  0.01;
+			PIDControl(&PIDRoll, sensorRoll, inputRoll);
+			PIDControl(&PIDPitch, sensorPitch, inputPitch);
+			PIDControl(&PIDYaw, sensorYaw, 0.0);
+			PIDControlAltitude(&PIDAltitude, sensorAltitude, holdAltitude);
+			trustControl(fly_mode);
+		}
+
+
 
 	}else if(htim->Instance == TIM10){
 		  //strSize = sprintf((char*)buffer, "YAW: %f\tPitch: %f\tRoll: %f\tThrottle: %d\r\n", inputYaw, inputPitch, inputRoll, inputThrottle);
@@ -1239,8 +1247,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		  //strSize = sprintf((char*)buffer, "ESC1: %d\tESC2: %d\tESC3: %d\tESC4: %d\r\n", pulseESC1, pulseESC2, pulseESC3, pulseESC4);
 		  //HAL_UART_Transmit(&huart1, buffer, strSize, 100);
 
-		strSize = sprintf((char*)buffer, "%f\r\n", sensorRoll);
-		HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+		//strSize = sprintf((char*)buffer, "%f %f %f\r\n", sensorRoll, sensorPitch, sensorYaw);
+		//HAL_UART_Transmit(&huart1, buffer, strSize, 10);
+		//strSize = sprintf((char*)buffer, "%f\r\n", altitude);
+		//HAL_UART_Transmit(&huart1, buffer, strSize, 10);
 	}
 }
 

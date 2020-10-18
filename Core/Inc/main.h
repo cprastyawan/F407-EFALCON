@@ -96,11 +96,11 @@ typedef struct
     uint16_t prevCNDTR;         /* Holds previous value of DMA_CNDTR */
 } DMA_Event_t;
 
-PIDType_t PIDYaw, PIDRoll, PIDPitch;
+PIDType_t PIDYaw, PIDRoll, PIDPitch, PIDAltitude;
 
 volatile float sensorYaw, sensorPitch, sensorRoll;
 volatile float inputYaw, inputPitch, inputRoll;
-volatile int inputThrottle, inputFlyMode;
+volatile int inputThrottle, inputFlyMode, holdThrottle;
 volatile int pulseESC1,pulseESC2,pulseESC3,pulseESC4;
 /* USER CODE END EM */
 

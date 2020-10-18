@@ -25,15 +25,23 @@ void PIDControl(PIDType_t *pidtype, float dataSensor, float setPoint){
 	pidtype->output = (pidtype->kp * pidtype->error) + (pidtype->kd * pidtype->derivative) + (pidtype->ki * pidtype->sumIntegral);
 }
 
-/*void PIDControlYAW(PIDType_t *pidtype, float dataYaw){
+void PIDControlAltitude(PIDType_t *pidtype, float dataSensor, float setPoint){
+	pidtype->setPoint = constrain(setPoint, 0, 100);
+	pidtype->error = pidtype->setPoint - dataSensor;
 
+
+	//if(pidtype->error >= 100) pidtype->error = 100;
+	//else if(pidtype->error < -100) pidtype->error = -100;
+
+	pidtype->sumIntegral += pidtype->error * pidtype->timesampling;
+	pidtype->sumIntegral = constrain(pidtype->sumIntegral, -1000, 1000);
+
+	pidtype->derivative = (pidtype->error - pidtype->preverror) / pidtype->timesampling;
+	pidtype->preverror = pidtype->error;
+
+	pidtype->output = (pidtype->kp * pidtype->error) + (pidtype->kd * pidtype->derivative) + (pidtype->ki * pidtype->sumIntegral);
 }
-void PIDControlROLL(PIDType_t *pidtype, float dataRoll){
 
-}
-void PIDControlPITCH(PIDType_t *pidtype, float dataPitch){
-
-}*/
 void PIDReset(PIDType_t *pidtype){
 	pidtype->sumIntegral = 0;
 	pidtype->output = 0;
@@ -52,7 +60,7 @@ void PIDInit(PIDType_t *pidtype, double kp, double ki, double kd, double timesam
 
 	pidtype->timesampling = timesampling;
 }
-void trustControl(){
+void trustControl(FLY_MODE fly_mode){
 	/*
 	  		CW 2\     /1 CCW
 				 \   /
@@ -82,7 +90,12 @@ void trustControl(){
 	const float angleMotor4 = 315;
 	const float L = 0.225;
 
-	thrust = map(inputThrottle, 1000, 2000, 0, 49.663985);
+	if(fly_mode == FLY_MODE_ON){
+		thrust = map(inputThrottle, 1000, 2000, 0, 49.663985);
+	} else if(fly_mode == FLY_MODE_HOLD){
+		thrust = map(holdThrottle + PIDAltitude.output, 1000, 2000, 0, 49.663985);
+	}
+
 
 	motor1Torque = (thrust/4 - PIDPitch.output * sin(angleMotor1/RADS) + PIDRoll.output * cos(angleMotor1 / RADS) - PIDYaw.output) * L;
 	motor2Torque = (thrust/4 - PIDPitch.output * sin(angleMotor2/RADS) + PIDRoll.output * cos(angleMotor2 / RADS) + PIDYaw.output) * L;
